@@ -1,0 +1,3988 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Web Page Analyzer API",
+    "description": "A web application that analyzes web pages and provides detailed information about:\n- HTML version\n- Page title\n- Heading counts by level\n- Internal and external links\n- Inaccessible links\n- Login form detection\n\n## API Versioning\n\nThis API uses semantic versioning and supports multiple versioning strategies:\n\n### Version Strategy\n- **URL Path Versioning**: `/v1/` (primary method)\n- **Header Versioning**: `API-Version: v1` header (alternative)\n- **Content Type Versioning**: `application/vnd.web-analyzer.v1+json` (for specific operations)\n\n### Version Information\n- All responses include `API-Version` header indicating the version used\n- Version-specific changes are documented in the changelog\n- Breaking changes require major version increment\n\n## Security\n\nThis API uses PASETO token authentication:\n- **PASETO tokens**: Platform Authentication Security Token Exchange and Operations - enhanced security tokens with issuer validation\n\n## Security Headers\n\nAll responses include standard security headers:\n- `X-Content-Type-Options: nosniff`\n- `X-Frame-Options: DENY`\n- `X-XSS-Protection: 1; mode=block`\n- `Strict-Transport-Security: max-age=31536000; includeSubDomains`\n- `Content-Security-Policy: default-src 'self'`\n- `Referrer-Policy: strict-origin-when-cross-origin`\n- `Permissions-Policy: camera=(), microphone=(), geolocation=()`\n",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Web Page Analyzer Support",
+      "url": "https://github.com/architeacher/svc-web-analyzer"
+    },
+    "license": {
+      "name": "MIT",
+      "url": "https://opensource.org/licenses/MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://api.web-analyzer.dev/{version}/",
+      "description": "Local development server",
+      "variables": {
+        "version": {
+          "default": "v1",
+          "enum": [
+            "v1"
+          ],
+          "description": "The API version to use"
+        }
+      }
+    }
+  ],
+  "security": [
+    {
+      "PasetoAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Analysis",
+      "description": "Web page analysis operations"
+    },
+    {
+      "name": "Real-time",
+      "description": "Real-time updates via Server-Sent Events"
+    },
+    {
+      "name": "System",
+      "description": "System liveness and readiness probes"
+    }
+  ],
+  "paths": {
+    "/v1/analyze": {
+      "post": {
+        "summary": "Analyze a web page",
+        "description": "Submits a URL for analysis. The analysis includes:\n- HTML version detection\n- Page title extraction\n- Heading counts (H1-H6)\n- Link analysis (internal/external/inaccessible)\n- Login form detection\n",
+        "operationId": "analyzeURL",
+        "tags": [
+          "Analysis"
+        ],
+        "security": [
+          {
+            "PasetoAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "API-Version",
+            "in": "header",
+            "required": false,
+            "description": "API version to use for this request. If not specified, defaults to v1.\nSupported versions: v1\n",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "v1"
+              ],
+              "default": "v1"
+            },
+            "example": "v1"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "url"
+                ],
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "format": "uri",
+                    "minLength": 1,
+                    "description": "The URL to analyze (supports absolute URLs, relative paths, and internal links)",
+                    "example": "https://example.com"
+                  },
+                  "options": {
+                    "type": "object",
+                    "properties": {
+                      "include_headings": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Whether to include heading analysis"
+                      },
+                      "check_links": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Whether to check link accessibility"
+                      },
+                      "detect_forms": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Whether to detect login forms"
+                      },
+                      "timeout": {
+                        "type": "integer",
+                        "minimum": 5,
+                        "maximum": 300,
+                        "default": 30,
+                        "description": "Request timeout in seconds"
+                      }
+                    }
+                  }
+                }
+              },
+              "examples": {
+                "simple_url": {
+                  "summary": "Simple URL analysis",
+                  "value": {
+                    "url": "https://example.com",
+                    "options": {
+                      "include_headings": true,
+                      "check_links": true,
+                      "detect_forms": true
+                    }
+                  }
+                },
+                "complex_site": {
+                  "summary": "Complex website analysis",
+                  "value": {
+                    "url": "https://github.com",
+                    "options": {
+                      "include_headings": true,
+                      "check_links": true,
+                      "detect_forms": true,
+                      "timeout": 60
+                    }
+                  }
+                },
+                "news_website": {
+                  "summary": "News website analysis",
+                  "value": {
+                    "url": "https://news.ycombinator.com",
+                    "options": {
+                      "include_headings": true,
+                      "check_links": false,
+                      "detect_forms": true,
+                      "timeout": 30
+                    }
+                  }
+                },
+                "ecommerce_site": {
+                  "summary": "E-commerce site analysis",
+                  "value": {
+                    "url": "https://example-shop.com",
+                    "options": {
+                      "include_headings": true,
+                      "check_links": true,
+                      "detect_forms": true,
+                      "timeout": 45
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Analysis request accepted",
+            "headers": {
+              "API-Version": {
+                "description": "API version used for this response",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "v1"
+                  ],
+                  "example": "v1"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "analysis_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Unique identifier for the analysis"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "requested",
+                        "in_progress",
+                        "completed",
+                        "failed"
+                      ],
+                      "description": "Current status of the analysis"
+                    },
+                    "url": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "The URL being analyzed"
+                    },
+                    "estimated_completion_time": {
+                      "type": "string",
+                      "description": "Estimated time to completion",
+                      "example": "30s"
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "When the analysis was created"
+                    }
+                  }
+                },
+                "examples": {
+                  "accepted": {
+                    "summary": "Analysis request accepted",
+                    "value": {
+                      "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
+                      "status": "requested",
+                      "url": "https://example.com",
+                      "estimated_completion_time": "30s",
+                      "created_at": "2025-01-15T10:30:00Z"
+                    }
+                  },
+                  "complex_analysis_accepted": {
+                    "summary": "Complex analysis accepted",
+                    "value": {
+                      "analysis_id": "550e8400-e29b-41d4-a716-446655440001",
+                      "status": "requested",
+                      "url": "https://github.com",
+                      "estimated_completion_time": "60s",
+                      "created_at": "2025-01-15T10:30:00Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - Invalid URL or parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable error message"
+                    },
+                    "details": {
+                      "type": "string",
+                      "description": "Additional error details"
+                    },
+                    "status_code": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "retry_after": {
+                      "type": "integer",
+                      "description": "Seconds to wait before retrying (for rate limit errors)"
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "examples": {
+                  "invalid_url": {
+                    "summary": "Invalid URL format",
+                    "value": {
+                      "error": "invalid_url",
+                      "message": "The provided URL is not valid",
+                      "details": "URL must be a valid HTTP or HTTPS URL",
+                      "status_code": 400,
+                      "timestamp": "2025-01-15T10:30:00Z"
+                    }
+                  },
+                  "missing_required_field": {
+                    "summary": "Missing required field",
+                    "value": {
+                      "error": "missing_required_field",
+                      "message": "Required field is missing",
+                      "details": "The 'url' field is required",
+                      "status_code": 400,
+                      "timestamp": "2025-01-15T10:30:00Z"
+                    }
+                  },
+                  "invalid_options": {
+                    "summary": "Invalid analysis options",
+                    "value": {
+                      "error": "invalid_options",
+                      "message": "Invalid analysis options provided",
+                      "details": "Timeout must be between 5 and 300 seconds",
+                      "status_code": 400,
+                      "timestamp": "2025-01-15T10:30:00Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Invalid or missing authentication",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable error message"
+                    },
+                    "details": {
+                      "type": "string",
+                      "description": "Additional error details"
+                    },
+                    "status_code": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "retry_after": {
+                      "type": "integer",
+                      "description": "Seconds to wait before retrying (for rate limit errors)"
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "examples": {
+                  "missing_token": {
+                    "summary": "Missing authentication token",
+                    "value": {
+                      "error": "missing_token",
+                      "message": "Authentication token is required",
+                      "details": "Please provide a valid Bearer token in the Authorization header",
+                      "status_code": 401,
+                      "timestamp": "2025-01-15T10:30:00Z"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid authentication token",
+                    "value": {
+                      "error": "invalid_token",
+                      "message": "Authentication token is invalid",
+                      "details": "The provided token is malformed or expired",
+                      "status_code": 401,
+                      "timestamp": "2025-01-15T10:30:00Z"
+                    }
+                  },
+                  "expired_token": {
+                    "summary": "Expired authentication token",
+                    "value": {
+                      "error": "expired_token",
+                      "message": "Authentication token has expired",
+                      "details": "Please refresh your token or login again",
+                      "status_code": 401,
+                      "timestamp": "2025-01-15T10:30:00Z"
+                    }
+                  },
+                  "invalid_credentials": {
+                    "summary": "Invalid login credentials",
+                    "value": {
+                      "error": "invalid_credentials",
+                      "message": "Invalid email or password",
+                      "details": "Please check your credentials and try again",
+                      "status_code": 401,
+                      "timestamp": "2025-01-15T10:30:00Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests - Rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable error message"
+                    },
+                    "details": {
+                      "type": "string",
+                      "description": "Additional error details"
+                    },
+                    "status_code": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "retry_after": {
+                      "type": "integer",
+                      "description": "Seconds to wait before retrying (for rate limit errors)"
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "examples": {
+                  "rate_limit_exceeded": {
+                    "summary": "Rate limit exceeded",
+                    "value": {
+                      "error": "rate_limit_exceeded",
+                      "message": "Too many requests. Please try again later",
+                      "details": "Rate limit: 10 requests per minute",
+                      "status_code": 429,
+                      "retry_after": 60,
+                      "timestamp": "2025-01-15T10:30:00Z"
+                    }
+                  },
+                  "daily_limit_exceeded": {
+                    "summary": "Daily limit exceeded",
+                    "value": {
+                      "error": "daily_limit_exceeded",
+                      "message": "Daily analysis limit exceeded",
+                      "details": "Free users are limited to 100 analyses per day",
+                      "status_code": 429,
+                      "retry_after": 86400,
+                      "timestamp": "2025-01-15T10:30:00Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable error message"
+                    },
+                    "details": {
+                      "type": "string",
+                      "description": "Additional error details"
+                    },
+                    "status_code": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "retry_after": {
+                      "type": "integer",
+                      "description": "Seconds to wait before retrying (for rate limit errors)"
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "examples": {
+                  "internal_server_error": {
+                    "summary": "Internal server error",
+                    "value": {
+                      "error": "internal_server_error",
+                      "message": "An unexpected error occurred",
+                      "details": "Please try again later. If the problem persists, contact support",
+                      "status_code": 500,
+                      "timestamp": "2025-01-15T10:30:00Z"
+                    }
+                  },
+                  "service_unavailable": {
+                    "summary": "Service temporarily unavailable",
+                    "value": {
+                      "error": "service_unavailable",
+                      "message": "Service is temporarily unavailable",
+                      "details": "The service is undergoing maintenance. Please try again in a few minutes",
+                      "status_code": 503,
+                      "timestamp": "2025-01-15T10:30:00Z"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/analysis/{analysisId}": {
+      "get": {
+        "summary": "Get analysis result",
+        "description": "Retrieves the result of a previously submitted analysis",
+        "operationId": "getAnalysis",
+        "tags": [
+          "Analysis"
+        ],
+        "security": [
+          {
+            "PasetoAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "API-Version",
+            "in": "header",
+            "required": false,
+            "description": "API version to use for this request. If not specified, defaults to v1.\nSupported versions: v1\n",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "v1"
+              ],
+              "default": "v1"
+            },
+            "example": "v1"
+          },
+          {
+            "name": "analysisId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The unique identifier of the analysis",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Analysis completed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "analysis_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "url": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "completed"
+                      ]
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "completed_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "duration": {
+                      "type": "string",
+                      "description": "Analysis duration",
+                      "example": "15s"
+                    },
+                    "results": {
+                      "type": "object",
+                      "properties": {
+                        "html_version": {
+                          "type": "string",
+                          "description": "Detected HTML version",
+                          "example": "HTML5"
+                        },
+                        "title": {
+                          "type": "string",
+                          "description": "Page title",
+                          "example": "Example Domain"
+                        },
+                        "heading_counts": {
+                          "type": "object",
+                          "properties": {
+                            "h1": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "h2": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "h3": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "h4": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "h5": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "h6": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "links": {
+                          "type": "object",
+                          "properties": {
+                            "internal_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "description": "Number of internal links"
+                            },
+                            "external_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "description": "Number of external links"
+                            },
+                            "total_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "description": "Total number of links"
+                            },
+                            "inaccessible_links": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "url": {
+                                    "type": "string",
+                                    "format": "uri"
+                                  },
+                                  "status_code": {
+                                    "type": "integer",
+                                    "description": "HTTP status code received"
+                                  },
+                                  "error": {
+                                    "type": "string",
+                                    "description": "Error description"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "forms": {
+                          "type": "object",
+                          "properties": {
+                            "total_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "description": "Total number of forms found"
+                            },
+                            "login_forms_detected": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "description": "Number of login forms detected"
+                            },
+                            "login_form_details": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "method": {
+                                    "type": "string",
+                                    "enum": [
+                                      "POST"
+                                    ],
+                                    "description": "Form submission method"
+                                  },
+                                  "action": {
+                                    "type": "string",
+                                    "description": "Form action URL"
+                                  },
+                                  "fields": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "description": "Form field names"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "examples": {
+                  "completed_analysis": {
+                    "summary": "Completed analysis result",
+                    "value": {
+                      "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
+                      "url": "https://example.com",
+                      "status": "completed",
+                      "created_at": "2025-01-15T10:30:00Z",
+                      "completed_at": "2025-01-15T10:30:15Z",
+                      "duration": "15s",
+                      "results": {
+                        "html_version": "HTML5",
+                        "title": "Example Domain",
+                        "heading_counts": {
+                          "h1": 1,
+                          "h2": 3,
+                          "h3": 5,
+                          "h4": 2,
+                          "h5": 0,
+                          "h6": 0
+                        },
+                        "links": {
+                          "internal_count": 15,
+                          "external_count": 8,
+                          "total_count": 23,
+                          "inaccessible_links": [
+                            {
+                              "url": "https://broken.example.com",
+                              "status_code": 404,
+                              "error": "Not Found"
+                            },
+                            {
+                              "url": "https://timeout.example.com",
+                              "status_code": 0,
+                              "error": "Connection timeout"
+                            }
+                          ]
+                        },
+                        "forms": {
+                          "total_count": 2,
+                          "login_forms_detected": 1,
+                          "login_form_details": [
+                            {
+                              "method": "POST",
+                              "action": "/login",
+                              "fields": [
+                                "username",
+                                "password"
+                              ]
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "github_analysis": {
+                    "summary": "GitHub homepage analysis",
+                    "value": {
+                      "analysis_id": "550e8400-e29b-41d4-a716-446655440001",
+                      "url": "https://github.com",
+                      "status": "completed",
+                      "created_at": "2025-01-15T10:35:00Z",
+                      "completed_at": "2025-01-15T10:35:45Z",
+                      "duration": "45s",
+                      "results": {
+                        "html_version": "HTML5",
+                        "title": "GitHub: Let's build from here",
+                        "heading_counts": {
+                          "h1": 2,
+                          "h2": 8,
+                          "h3": 12,
+                          "h4": 5,
+                          "h5": 3,
+                          "h6": 1
+                        },
+                        "links": {
+                          "internal_count": 150,
+                          "external_count": 25,
+                          "total_count": 175,
+                          "inaccessible_links": []
+                        },
+                        "forms": {
+                          "total_count": 3,
+                          "login_forms_detected": 1,
+                          "login_form_details": [
+                            {
+                              "method": "POST",
+                              "action": "/session",
+                              "fields": [
+                                "login",
+                                "password"
+                              ]
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Analysis still in progress",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "analysis_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "in_progress"
+                      ]
+                    },
+                    "progress": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 100,
+                      "description": "Progress percentage"
+                    },
+                    "current_step": {
+                      "type": "string",
+                      "description": "Current analysis step",
+                      "example": "analyzing_links"
+                    },
+                    "estimated_completion_time": {
+                      "type": "string",
+                      "description": "Estimated time to completion"
+                    }
+                  }
+                },
+                "examples": {
+                  "in_progress": {
+                    "summary": "Analysis in progress",
+                    "value": {
+                      "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
+                      "status": "in_progress",
+                      "progress": 65,
+                      "current_step": "analyzing_links",
+                      "estimated_completion_time": "10s"
+                    }
+                  },
+                  "fetching_page": {
+                    "summary": "Fetching page content",
+                    "value": {
+                      "analysis_id": "550e8400-e29b-41d4-a716-446655440001",
+                      "status": "in_progress",
+                      "progress": 25,
+                      "current_step": "fetching_page",
+                      "estimated_completion_time": "25s"
+                    }
+                  },
+                  "analyzing_forms": {
+                    "summary": "Analyzing forms",
+                    "value": {
+                      "analysis_id": "550e8400-e29b-41d4-a716-446655440002",
+                      "status": "in_progress",
+                      "progress": 85,
+                      "current_step": "analyzing_forms",
+                      "estimated_completion_time": "5s"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable error message"
+                    },
+                    "details": {
+                      "type": "string",
+                      "description": "Additional error details"
+                    },
+                    "status_code": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "retry_after": {
+                      "type": "integer",
+                      "description": "Seconds to wait before retrying (for rate limit errors)"
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "examples": {
+                  "analysis_not_found": {
+                    "summary": "Analysis not found",
+                    "value": {
+                      "error": "analysis_not_found",
+                      "message": "Analysis not found",
+                      "details": "No analysis found with the provided ID",
+                      "status_code": 404,
+                      "timestamp": "2025-01-15T10:30:00Z"
+                    }
+                  },
+                  "user_not_found": {
+                    "summary": "User not found",
+                    "value": {
+                      "error": "user_not_found",
+                      "message": "User not found",
+                      "details": "No user found with the provided credentials",
+                      "status_code": 404,
+                      "timestamp": "2025-01-15T10:30:00Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Analysis failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "analysis_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "failed"
+                      ]
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Error type"
+                    },
+                    "error_message": {
+                      "type": "string",
+                      "description": "Human-readable error message"
+                    },
+                    "http_status_code": {
+                      "type": "integer",
+                      "description": "HTTP status code from the target URL (if applicable)"
+                    },
+                    "details": {
+                      "type": "string",
+                      "description": "Additional error details"
+                    }
+                  }
+                },
+                "examples": {
+                  "page_unreachable": {
+                    "summary": "Page unreachable error",
+                    "value": {
+                      "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
+                      "status": "failed",
+                      "error": "page_unreachable",
+                      "error_message": "Failed to fetch page: connection timeout",
+                      "http_status_code": 0,
+                      "details": "The target URL could not be reached after 3 retry attempts"
+                    }
+                  },
+                  "forbidden_access": {
+                    "summary": "Forbidden access error",
+                    "value": {
+                      "analysis_id": "550e8400-e29b-41d4-a716-446655440001",
+                      "status": "failed",
+                      "error": "forbidden_access",
+                      "error_message": "Access to the requested page is forbidden",
+                      "http_status_code": 403,
+                      "details": "The server denied access to the requested resource"
+                    }
+                  },
+                  "invalid_content": {
+                    "summary": "Invalid content error",
+                    "value": {
+                      "analysis_id": "550e8400-e29b-41d4-a716-446655440002",
+                      "status": "failed",
+                      "error": "invalid_content",
+                      "error_message": "The page content could not be parsed",
+                      "http_status_code": 200,
+                      "details": "The response does not contain valid HTML content"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/analysis/{analysisId}/events": {
+      "get": {
+        "summary": "Get real-time analysis progress",
+        "description": "Server-Sent Events endpoint for real-time analysis progress updates.\nThis endpoint streams live updates about the analysis progress.\n",
+        "operationId": "getAnalysisEvents",
+        "tags": [
+          "Real-time"
+        ],
+        "security": [
+          {
+            "PasetoAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "API-Version",
+            "in": "header",
+            "required": false,
+            "description": "API version to use for this request. If not specified, defaults to v1.\nSupported versions: v1\n",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "v1"
+              ],
+              "default": "v1"
+            },
+            "example": "v1"
+          },
+          {
+            "name": "analysisId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The unique identifier of the analysis"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE stream of analysis progress",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                },
+                "examples": {
+                  "progress_events": {
+                    "summary": "SSE progress events",
+                    "value": "event: started\ndata: {\"analysis_id\": \"550e8400-e29b-41d4-a716-446655440000\", \"status\": \"started\", \"timestamp\": \"2025-01-15T10:30:00Z\"}\n\nevent: progress\ndata: {\"step\": \"fetching_page\", \"progress\": 25, \"message\": \"Fetching page content...\", \"timestamp\": \"2025-01-15T10:30:05Z\"}\n\nevent: progress\ndata: {\"step\": \"parsing_html\", \"progress\": 50, \"message\": \"Parsing HTML content...\", \"timestamp\": \"2025-01-15T10:30:08Z\"}\n\nevent: step_completed\ndata: {\"step\": \"html_analysis\", \"progress\": 60, \"results\": {\"html_version\": \"HTML5\", \"title\": \"Example Domain\"}, \"timestamp\": \"2025-01-15T10:30:10Z\"}\n\nevent: progress\ndata: {\"step\": \"analyzing_links\", \"progress\": 75, \"message\": \"Analyzing links...\", \"timestamp\": \"2025-01-15T10:30:12Z\"}\n\nevent: step_completed\ndata: {\"step\": \"link_analysis\", \"progress\": 90, \"results\": {\"internal_count\": 15, \"external_count\": 8}, \"timestamp\": \"2025-01-15T10:30:14Z\"}\n\nevent: completed\ndata: {\"analysis_id\": \"550e8400-e29b-41d4-a716-446655440000\", \"status\": \"completed\", \"timestamp\": \"2025-01-15T10:30:15Z\"}\n"
+                  },
+                  "error_event": {
+                    "summary": "SSE error event",
+                    "value": "event: started\ndata: {\"analysis_id\": \"550e8400-e29b-41d4-a716-446655440001\", \"status\": \"started\", \"timestamp\": \"2025-01-15T10:30:00Z\"}\n\nevent: progress\ndata: {\"step\": \"fetching_page\", \"progress\": 25, \"message\": \"Fetching page content...\", \"timestamp\": \"2025-01-15T10:30:05Z\"}\n\nevent: error\ndata: {\"analysis_id\": \"550e8400-e29b-41d4-a716-446655440001\", \"status\": \"failed\", \"error\": \"page_unreachable\", \"message\": \"Connection timeout\", \"timestamp\": \"2025-01-15T10:30:30Z\"}\n"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/liveness": {
+      "get": {
+        "summary": "Liveness probe",
+        "description": "Simple liveness check to determine if the service is running.\nUsed by orchestrators (like Kubernetes) to determine if the container should be restarted.\n",
+        "operationId": "livenessCheck",
+        "tags": [
+          "System"
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Service is alive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "timestamp",
+                    "version"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "OK",
+                        "DOWN",
+                        "MAINTENANCE"
+                      ],
+                      "description": "Service liveness status"
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "ISO 8601 timestamp when the check was performed"
+                    },
+                    "version": {
+                      "type": "string",
+                      "description": "API version",
+                      "example": "v1.0.0"
+                    }
+                  }
+                },
+                "examples": {
+                  "service_ok": {
+                    "summary": "Service is OK",
+                    "value": {
+                      "status": "OK",
+                      "timestamp": "2025-01-15T10:30:00Z",
+                      "version": "v1.0.0"
+                    }
+                  },
+                  "service_down": {
+                    "summary": "Service is down",
+                    "value": {
+                      "status": "MAINTENANCE",
+                      "timestamp": "2025-01-15T10:30:00Z",
+                      "version": "v1.0.0"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service is dead",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "timestamp",
+                    "version"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "OK",
+                        "DOWN",
+                        "MAINTENANCE"
+                      ],
+                      "description": "Service liveness status"
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "ISO 8601 timestamp when the check was performed"
+                    },
+                    "version": {
+                      "type": "string",
+                      "description": "API version",
+                      "example": "v1.0.0"
+                    }
+                  }
+                },
+                "examples": {
+                  "service_down": {
+                    "summary": "Service is down",
+                    "value": {
+                      "status": "MAINTENANCE",
+                      "timestamp": "2025-01-15T10:30:00Z",
+                      "version": "v1.0.0"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/readiness": {
+      "get": {
+        "summary": "Readiness probe",
+        "description": "Comprehensive readiness check to determine if the service is ready to accept traffic.\nChecks all critical dependencies including storage, cache, and queue systems.\nUsed by orchestrators to determine if traffic should be routed to this instance.\n",
+        "operationId": "readinessCheck",
+        "tags": [
+          "System"
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Service is ready to accept traffic",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "timestamp",
+                    "checks"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "OK",
+                        "DOWN",
+                        "MAINTENANCE"
+                      ],
+                      "description": "Overall readiness status - ready only if all dependencies are healthy"
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "ISO 8601 timestamp when the check was performed"
+                    },
+                    "version": {
+                      "type": "string",
+                      "description": "Application version",
+                      "example": "1.0.0"
+                    },
+                    "checks": {
+                      "type": "object",
+                      "description": "Status of individual dependencies",
+                      "properties": {
+                        "storage": {
+                          "type": "object",
+                          "required": [
+                            "status"
+                          ],
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "healthy",
+                                "unhealthy",
+                                "unknown"
+                              ],
+                              "description": "Health status of the dependency"
+                            },
+                            "last_checked": {
+                              "type": "string",
+                              "format": "date-time",
+                              "description": "When this dependency was last checked"
+                            },
+                            "error": {
+                              "type": "string",
+                              "description": "Error message if the dependency is unhealthy",
+                              "example": "Database connection failed"
+                            }
+                          }
+                        },
+                        "cache": {
+                          "type": "object",
+                          "required": [
+                            "status"
+                          ],
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "healthy",
+                                "unhealthy",
+                                "unknown"
+                              ],
+                              "description": "Health status of the dependency"
+                            },
+                            "last_checked": {
+                              "type": "string",
+                              "format": "date-time",
+                              "description": "When this dependency was last checked"
+                            },
+                            "error": {
+                              "type": "string",
+                              "description": "Error message if the dependency is unhealthy",
+                              "example": "Database connection failed"
+                            }
+                          }
+                        },
+                        "queue": {
+                          "type": "object",
+                          "required": [
+                            "status"
+                          ],
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "healthy",
+                                "unhealthy",
+                                "unknown"
+                              ],
+                              "description": "Health status of the dependency"
+                            },
+                            "last_checked": {
+                              "type": "string",
+                              "format": "date-time",
+                              "description": "When this dependency was last checked"
+                            },
+                            "error": {
+                              "type": "string",
+                              "description": "Error message if the dependency is unhealthy",
+                              "example": "Database connection failed"
+                            }
+                          }
+                        }
+                      },
+                      "additionalProperties": {
+                        "type": "object",
+                        "required": [
+                          "status"
+                        ],
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "healthy",
+                              "unhealthy",
+                              "unknown"
+                            ],
+                            "description": "Health status of the dependency"
+                          },
+                          "last_checked": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "When this dependency was last checked"
+                          },
+                          "error": {
+                            "type": "string",
+                            "description": "Error message if the dependency is unhealthy",
+                            "example": "Database connection failed"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "examples": {
+                  "ready_service": {
+                    "summary": "Service is ready",
+                    "value": {
+                      "status": "OK",
+                      "timestamp": "2025-01-15T10:30:00Z",
+                      "version": "1.0.0",
+                      "checks": {
+                        "storage": {
+                          "status": "healthy",
+                          "last_checked": "2025-01-15T10:30:00Z"
+                        },
+                        "cache": {
+                          "status": "healthy",
+                          "last_checked": "2025-01-15T10:30:00Z"
+                        },
+                        "queue": {
+                          "status": "healthy",
+                          "last_checked": "2025-01-15T10:30:00Z"
+                        }
+                      }
+                    }
+                  },
+                  "not_ready_service": {
+                    "summary": "Service is not ready",
+                    "value": {
+                      "status": "DOWN",
+                      "timestamp": "2025-01-15T10:30:00Z",
+                      "version": "1.0.0",
+                      "checks": {
+                        "storage": {
+                          "status": "unhealthy",
+                          "last_checked": "2025-01-15T10:30:00Z",
+                          "error": "Database connection failed"
+                        },
+                        "cache": {
+                          "status": "unhealthy",
+                          "last_checked": "2025-01-15T10:30:00Z",
+                          "error": "Redis server unreachable"
+                        },
+                        "queue": {
+                          "status": "unhealthy",
+                          "last_checked": "2025-01-15T10:30:00Z",
+                          "error": "Message queue connection timeout"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service is not ready (dependencies unavailable)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "timestamp",
+                    "checks"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "OK",
+                        "DOWN",
+                        "MAINTENANCE"
+                      ],
+                      "description": "Overall readiness status - ready only if all dependencies are healthy"
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "ISO 8601 timestamp when the check was performed"
+                    },
+                    "version": {
+                      "type": "string",
+                      "description": "Application version",
+                      "example": "1.0.0"
+                    },
+                    "checks": {
+                      "type": "object",
+                      "description": "Status of individual dependencies",
+                      "properties": {
+                        "storage": {
+                          "type": "object",
+                          "required": [
+                            "status"
+                          ],
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "healthy",
+                                "unhealthy",
+                                "unknown"
+                              ],
+                              "description": "Health status of the dependency"
+                            },
+                            "last_checked": {
+                              "type": "string",
+                              "format": "date-time",
+                              "description": "When this dependency was last checked"
+                            },
+                            "error": {
+                              "type": "string",
+                              "description": "Error message if the dependency is unhealthy",
+                              "example": "Database connection failed"
+                            }
+                          }
+                        },
+                        "cache": {
+                          "type": "object",
+                          "required": [
+                            "status"
+                          ],
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "healthy",
+                                "unhealthy",
+                                "unknown"
+                              ],
+                              "description": "Health status of the dependency"
+                            },
+                            "last_checked": {
+                              "type": "string",
+                              "format": "date-time",
+                              "description": "When this dependency was last checked"
+                            },
+                            "error": {
+                              "type": "string",
+                              "description": "Error message if the dependency is unhealthy",
+                              "example": "Database connection failed"
+                            }
+                          }
+                        },
+                        "queue": {
+                          "type": "object",
+                          "required": [
+                            "status"
+                          ],
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "healthy",
+                                "unhealthy",
+                                "unknown"
+                              ],
+                              "description": "Health status of the dependency"
+                            },
+                            "last_checked": {
+                              "type": "string",
+                              "format": "date-time",
+                              "description": "When this dependency was last checked"
+                            },
+                            "error": {
+                              "type": "string",
+                              "description": "Error message if the dependency is unhealthy",
+                              "example": "Database connection failed"
+                            }
+                          }
+                        }
+                      },
+                      "additionalProperties": {
+                        "type": "object",
+                        "required": [
+                          "status"
+                        ],
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "healthy",
+                              "unhealthy",
+                              "unknown"
+                            ],
+                            "description": "Health status of the dependency"
+                          },
+                          "last_checked": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "When this dependency was last checked"
+                          },
+                          "error": {
+                            "type": "string",
+                            "description": "Error message if the dependency is unhealthy",
+                            "example": "Database connection failed"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "examples": {
+                  "not_ready_service": {
+                    "summary": "Service is not ready",
+                    "value": {
+                      "status": "DOWN",
+                      "timestamp": "2025-01-15T10:30:00Z",
+                      "version": "1.0.0",
+                      "checks": {
+                        "storage": {
+                          "status": "unhealthy",
+                          "last_checked": "2025-01-15T10:30:00Z",
+                          "error": "Database connection failed"
+                        },
+                        "cache": {
+                          "status": "unhealthy",
+                          "last_checked": "2025-01-15T10:30:00Z",
+                          "error": "Redis server unreachable"
+                        },
+                        "queue": {
+                          "status": "unhealthy",
+                          "last_checked": "2025-01-15T10:30:00Z",
+                          "error": "Message queue connection timeout"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/health": {
+      "get": {
+        "summary": "Health check",
+        "description": "Comprehensive health check with detailed system information including uptime.\nThis endpoint provides the same dependency status as readiness but includes\nadditional system metrics. Protected with basic authentication.\n",
+        "operationId": "healthCheck",
+        "tags": [
+          "System"
+        ],
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service health status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "timestamp",
+                    "checks"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "OK",
+                        "DOWN",
+                        "MAINTENANCE"
+                      ],
+                      "description": "Overall health status - OK only if all dependencies are healthy"
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "ISO 8601 timestamp when the check was performed"
+                    },
+                    "version": {
+                      "type": "string",
+                      "description": "Application version",
+                      "example": "1.0.0"
+                    },
+                    "uptime": {
+                      "type": "number",
+                      "description": "Service uptime in seconds",
+                      "example": 3600.5
+                    },
+                    "checks": {
+                      "type": "object",
+                      "description": "Status of individual dependencies",
+                      "properties": {
+                        "storage": {
+                          "type": "object",
+                          "required": [
+                            "status"
+                          ],
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "healthy",
+                                "unhealthy",
+                                "unknown"
+                              ],
+                              "description": "Health status of the dependency"
+                            },
+                            "response_time": {
+                              "type": "number",
+                              "description": "Response time in milliseconds",
+                              "example": 42.5
+                            },
+                            "last_checked": {
+                              "type": "string",
+                              "format": "date-time",
+                              "description": "When this dependency was last checked"
+                            },
+                            "error": {
+                              "type": "string",
+                              "description": "Error message if the dependency is unhealthy",
+                              "example": "Connection timeout after 5000ms"
+                            },
+                            "details": {
+                              "type": "object",
+                              "description": "Additional dependency-specific information",
+                              "additionalProperties": true
+                            }
+                          }
+                        },
+                        "cache": {
+                          "allOf": [
+                            {
+                              "type": "object",
+                              "required": [
+                                "status"
+                              ],
+                              "properties": {
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "healthy",
+                                    "unhealthy",
+                                    "unknown"
+                                  ],
+                                  "description": "Health status of the dependency"
+                                },
+                                "response_time": {
+                                  "type": "number",
+                                  "description": "Response time in milliseconds",
+                                  "example": 42.5
+                                },
+                                "last_checked": {
+                                  "type": "string",
+                                  "format": "date-time",
+                                  "description": "When this dependency was last checked"
+                                },
+                                "error": {
+                                  "type": "string",
+                                  "description": "Error message if the dependency is unhealthy",
+                                  "example": "Connection timeout after 5000ms"
+                                },
+                                "details": {
+                                  "type": "object",
+                                  "description": "Additional dependency-specific information",
+                                  "additionalProperties": true
+                                }
+                              }
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "details": {
+                                  "type": "object",
+                                  "properties": {
+                                    "total_keys": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "description": "Total number of keys in cache",
+                                      "example": 1247
+                                    },
+                                    "pool_stats": {
+                                      "type": "object",
+                                      "required": [
+                                        "hits",
+                                        "misses",
+                                        "timeouts",
+                                        "wait_count",
+                                        "wait_duration_ns",
+                                        "total_connections",
+                                        "idle_connections",
+                                        "stale_connections"
+                                      ],
+                                      "properties": {
+                                        "hits": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "description": "Number of times free connection was found in the pool",
+                                          "example": 1250
+                                        },
+                                        "misses": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "description": "Number of times free connection was NOT found in the pool",
+                                          "example": 42
+                                        },
+                                        "timeouts": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "description": "Number of times a wait timeout occurred",
+                                          "example": 3
+                                        },
+                                        "wait_count": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "description": "Number of times a connection was waited",
+                                          "example": 45
+                                        },
+                                        "wait_duration_ns": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "description": "Total time spent for waiting a connection in nanoseconds",
+                                          "example": 15000000
+                                        },
+                                        "total_connections": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "description": "Number of total connections in the pool",
+                                          "example": 10
+                                        },
+                                        "idle_connections": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "description": "Number of idle connections in the pool",
+                                          "example": 7
+                                        },
+                                        "stale_connections": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "description": "Number of stale connections removed from the pool",
+                                          "example": 2
+                                        }
+                                      }
+                                    }
+                                  },
+                                  "additionalProperties": true
+                                }
+                              }
+                            }
+                          ]
+                        },
+                        "queue": {
+                          "type": "object",
+                          "required": [
+                            "status"
+                          ],
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "healthy",
+                                "unhealthy",
+                                "unknown"
+                              ],
+                              "description": "Health status of the dependency"
+                            },
+                            "response_time": {
+                              "type": "number",
+                              "description": "Response time in milliseconds",
+                              "example": 42.5
+                            },
+                            "last_checked": {
+                              "type": "string",
+                              "format": "date-time",
+                              "description": "When this dependency was last checked"
+                            },
+                            "error": {
+                              "type": "string",
+                              "description": "Error message if the dependency is unhealthy",
+                              "example": "Connection timeout after 5000ms"
+                            },
+                            "details": {
+                              "type": "object",
+                              "description": "Additional dependency-specific information",
+                              "additionalProperties": true
+                            }
+                          }
+                        }
+                      },
+                      "additionalProperties": {
+                        "type": "object",
+                        "required": [
+                          "status"
+                        ],
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "healthy",
+                              "unhealthy",
+                              "unknown"
+                            ],
+                            "description": "Health status of the dependency"
+                          },
+                          "response_time": {
+                            "type": "number",
+                            "description": "Response time in milliseconds",
+                            "example": 42.5
+                          },
+                          "last_checked": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "When this dependency was last checked"
+                          },
+                          "error": {
+                            "type": "string",
+                            "description": "Error message if the dependency is unhealthy",
+                            "example": "Connection timeout after 5000ms"
+                          },
+                          "details": {
+                            "type": "object",
+                            "description": "Additional dependency-specific information",
+                            "additionalProperties": true
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "examples": {
+                  "healthy_service": {
+                    "summary": "Service is healthy",
+                    "value": {
+                      "status": "OK",
+                      "timestamp": "2025-01-15T10:30:00Z",
+                      "version": "1.0.0",
+                      "uptime": 3600.5,
+                      "checks": {
+                        "storage": {
+                          "status": "healthy",
+                          "response_time": 15.2,
+                          "last_checked": "2025-01-15T10:30:00Z"
+                        },
+                        "cache": {
+                          "status": "healthy",
+                          "response_time": 2.8,
+                          "last_checked": "2025-01-15T10:30:00Z",
+                          "details": {
+                            "total_keys": 1247,
+                            "pool_stats": {
+                              "hits": 1250,
+                              "misses": 42,
+                              "timeouts": 3,
+                              "wait_count": 45,
+                              "wait_duration_ns": 15000000,
+                              "total_connections": 10,
+                              "idle_connections": 7,
+                              "stale_connections": 2
+                            }
+                          }
+                        },
+                        "queue": {
+                          "status": "healthy",
+                          "response_time": 5.4,
+                          "last_checked": "2025-01-15T10:30:00Z",
+                          "details": {
+                            "pending_jobs": 12,
+                            "active_workers": 3
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "unhealthy_service": {
+                    "summary": "Service is unhealthy",
+                    "value": {
+                      "status": "DOWN",
+                      "timestamp": "2025-01-15T10:30:00Z",
+                      "version": "1.0.0",
+                      "uptime": 1800.2,
+                      "checks": {
+                        "storage": {
+                          "status": "unhealthy",
+                          "last_checked": "2025-01-15T10:30:00Z",
+                          "error": "Connection timeout"
+                        },
+                        "cache": {
+                          "status": "unhealthy",
+                          "last_checked": "2025-01-15T10:30:00Z",
+                          "error": "Redis connection pool exhausted"
+                        },
+                        "queue": {
+                          "status": "unhealthy",
+                          "last_checked": "2025-01-15T10:30:00Z",
+                          "error": "Message broker unreachable"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service is unhealthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "timestamp",
+                    "checks"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "OK",
+                        "DOWN",
+                        "MAINTENANCE"
+                      ],
+                      "description": "Overall health status - OK only if all dependencies are healthy"
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "ISO 8601 timestamp when the check was performed"
+                    },
+                    "version": {
+                      "type": "string",
+                      "description": "Application version",
+                      "example": "1.0.0"
+                    },
+                    "uptime": {
+                      "type": "number",
+                      "description": "Service uptime in seconds",
+                      "example": 3600.5
+                    },
+                    "checks": {
+                      "type": "object",
+                      "description": "Status of individual dependencies",
+                      "properties": {
+                        "storage": {
+                          "type": "object",
+                          "required": [
+                            "status"
+                          ],
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "healthy",
+                                "unhealthy",
+                                "unknown"
+                              ],
+                              "description": "Health status of the dependency"
+                            },
+                            "response_time": {
+                              "type": "number",
+                              "description": "Response time in milliseconds",
+                              "example": 42.5
+                            },
+                            "last_checked": {
+                              "type": "string",
+                              "format": "date-time",
+                              "description": "When this dependency was last checked"
+                            },
+                            "error": {
+                              "type": "string",
+                              "description": "Error message if the dependency is unhealthy",
+                              "example": "Connection timeout after 5000ms"
+                            },
+                            "details": {
+                              "type": "object",
+                              "description": "Additional dependency-specific information",
+                              "additionalProperties": true
+                            }
+                          }
+                        },
+                        "cache": {
+                          "allOf": [
+                            {
+                              "type": "object",
+                              "required": [
+                                "status"
+                              ],
+                              "properties": {
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "healthy",
+                                    "unhealthy",
+                                    "unknown"
+                                  ],
+                                  "description": "Health status of the dependency"
+                                },
+                                "response_time": {
+                                  "type": "number",
+                                  "description": "Response time in milliseconds",
+                                  "example": 42.5
+                                },
+                                "last_checked": {
+                                  "type": "string",
+                                  "format": "date-time",
+                                  "description": "When this dependency was last checked"
+                                },
+                                "error": {
+                                  "type": "string",
+                                  "description": "Error message if the dependency is unhealthy",
+                                  "example": "Connection timeout after 5000ms"
+                                },
+                                "details": {
+                                  "type": "object",
+                                  "description": "Additional dependency-specific information",
+                                  "additionalProperties": true
+                                }
+                              }
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "details": {
+                                  "type": "object",
+                                  "properties": {
+                                    "total_keys": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "description": "Total number of keys in cache",
+                                      "example": 1247
+                                    },
+                                    "pool_stats": {
+                                      "type": "object",
+                                      "required": [
+                                        "hits",
+                                        "misses",
+                                        "timeouts",
+                                        "wait_count",
+                                        "wait_duration_ns",
+                                        "total_connections",
+                                        "idle_connections",
+                                        "stale_connections"
+                                      ],
+                                      "properties": {
+                                        "hits": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "description": "Number of times free connection was found in the pool",
+                                          "example": 1250
+                                        },
+                                        "misses": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "description": "Number of times free connection was NOT found in the pool",
+                                          "example": 42
+                                        },
+                                        "timeouts": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "description": "Number of times a wait timeout occurred",
+                                          "example": 3
+                                        },
+                                        "wait_count": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "description": "Number of times a connection was waited",
+                                          "example": 45
+                                        },
+                                        "wait_duration_ns": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "description": "Total time spent for waiting a connection in nanoseconds",
+                                          "example": 15000000
+                                        },
+                                        "total_connections": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "description": "Number of total connections in the pool",
+                                          "example": 10
+                                        },
+                                        "idle_connections": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "description": "Number of idle connections in the pool",
+                                          "example": 7
+                                        },
+                                        "stale_connections": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "description": "Number of stale connections removed from the pool",
+                                          "example": 2
+                                        }
+                                      }
+                                    }
+                                  },
+                                  "additionalProperties": true
+                                }
+                              }
+                            }
+                          ]
+                        },
+                        "queue": {
+                          "type": "object",
+                          "required": [
+                            "status"
+                          ],
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "healthy",
+                                "unhealthy",
+                                "unknown"
+                              ],
+                              "description": "Health status of the dependency"
+                            },
+                            "response_time": {
+                              "type": "number",
+                              "description": "Response time in milliseconds",
+                              "example": 42.5
+                            },
+                            "last_checked": {
+                              "type": "string",
+                              "format": "date-time",
+                              "description": "When this dependency was last checked"
+                            },
+                            "error": {
+                              "type": "string",
+                              "description": "Error message if the dependency is unhealthy",
+                              "example": "Connection timeout after 5000ms"
+                            },
+                            "details": {
+                              "type": "object",
+                              "description": "Additional dependency-specific information",
+                              "additionalProperties": true
+                            }
+                          }
+                        }
+                      },
+                      "additionalProperties": {
+                        "type": "object",
+                        "required": [
+                          "status"
+                        ],
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "healthy",
+                              "unhealthy",
+                              "unknown"
+                            ],
+                            "description": "Health status of the dependency"
+                          },
+                          "response_time": {
+                            "type": "number",
+                            "description": "Response time in milliseconds",
+                            "example": 42.5
+                          },
+                          "last_checked": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "When this dependency was last checked"
+                          },
+                          "error": {
+                            "type": "string",
+                            "description": "Error message if the dependency is unhealthy",
+                            "example": "Connection timeout after 5000ms"
+                          },
+                          "details": {
+                            "type": "object",
+                            "description": "Additional dependency-specific information",
+                            "additionalProperties": true
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "examples": {
+                  "unhealthy_service": {
+                    "summary": "Service is unhealthy",
+                    "value": {
+                      "status": "DOWN",
+                      "timestamp": "2025-01-15T10:30:00Z",
+                      "version": "1.0.0",
+                      "uptime": 1800.2,
+                      "checks": {
+                        "storage": {
+                          "status": "unhealthy",
+                          "last_checked": "2025-01-15T10:30:00Z",
+                          "error": "Connection timeout"
+                        },
+                        "cache": {
+                          "status": "unhealthy",
+                          "last_checked": "2025-01-15T10:30:00Z",
+                          "error": "Redis connection pool exhausted"
+                        },
+                        "queue": {
+                          "status": "unhealthy",
+                          "last_checked": "2025-01-15T10:30:00Z",
+                          "error": "Message broker unreachable"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "ApiVersionHeader": {
+        "name": "API-Version",
+        "in": "header",
+        "required": false,
+        "description": "API version to use for this request. If not specified, defaults to v1.\nSupported versions: v1\n",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "v1"
+          ],
+          "default": "v1"
+        },
+        "example": "v1"
+      }
+    },
+    "headers": {
+      "ApiVersionHeader": {
+        "description": "API version used for this response",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "v1"
+          ],
+          "example": "v1"
+        }
+      }
+    },
+    "securitySchemes": {
+      "PasetoAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "PASETO",
+        "description": "PASETO (Platform Authentication Security Token Exchange and Operations) v4 token.\nA secure token format with issuer validation and enhanced security features.\nFormat: Bearer v4.local.{payload} or Bearer v4.public.{payload}.{signature}\n"
+      },
+      "BasicAuth": {
+        "type": "http",
+        "scheme": "basic",
+        "description": "Basic HTTP authentication for administrative endpoints"
+      }
+    },
+    "schemas": {
+      "AnalyzeRequest": {
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "minLength": 1,
+            "description": "The URL to analyze (supports absolute URLs, relative paths, and internal links)",
+            "example": "https://example.com"
+          },
+          "options": {
+            "type": "object",
+            "properties": {
+              "include_headings": {
+                "type": "boolean",
+                "default": true,
+                "description": "Whether to include heading analysis"
+              },
+              "check_links": {
+                "type": "boolean",
+                "default": true,
+                "description": "Whether to check link accessibility"
+              },
+              "detect_forms": {
+                "type": "boolean",
+                "default": true,
+                "description": "Whether to detect login forms"
+              },
+              "timeout": {
+                "type": "integer",
+                "minimum": 5,
+                "maximum": 300,
+                "default": 30,
+                "description": "Request timeout in seconds"
+              }
+            }
+          }
+        }
+      },
+      "AnalysisResponse": {
+        "type": "object",
+        "properties": {
+          "analysis_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Unique identifier for the analysis"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "requested",
+              "in_progress",
+              "completed",
+              "failed"
+            ],
+            "description": "Current status of the analysis"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "The URL being analyzed"
+          },
+          "estimated_completion_time": {
+            "type": "string",
+            "description": "Estimated time to completion",
+            "example": "30s"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the analysis was created"
+          }
+        }
+      },
+      "AnalysisResult": {
+        "type": "object",
+        "properties": {
+          "analysis_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "completed"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "duration": {
+            "type": "string",
+            "description": "Analysis duration",
+            "example": "15s"
+          },
+          "results": {
+            "type": "object",
+            "properties": {
+              "html_version": {
+                "type": "string",
+                "description": "Detected HTML version",
+                "example": "HTML5"
+              },
+              "title": {
+                "type": "string",
+                "description": "Page title",
+                "example": "Example Domain"
+              },
+              "heading_counts": {
+                "type": "object",
+                "properties": {
+                  "h1": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "h2": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "h3": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "h4": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "h5": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "h6": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              },
+              "links": {
+                "type": "object",
+                "properties": {
+                  "internal_count": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Number of internal links"
+                  },
+                  "external_count": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Number of external links"
+                  },
+                  "total_count": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Total number of links"
+                  },
+                  "inaccessible_links": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "url": {
+                          "type": "string",
+                          "format": "uri"
+                        },
+                        "status_code": {
+                          "type": "integer",
+                          "description": "HTTP status code received"
+                        },
+                        "error": {
+                          "type": "string",
+                          "description": "Error description"
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "forms": {
+                "type": "object",
+                "properties": {
+                  "total_count": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Total number of forms found"
+                  },
+                  "login_forms_detected": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Number of login forms detected"
+                  },
+                  "login_form_details": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "method": {
+                          "type": "string",
+                          "enum": [
+                            "POST"
+                          ],
+                          "description": "Form submission method"
+                        },
+                        "action": {
+                          "type": "string",
+                          "description": "Form action URL"
+                        },
+                        "fields": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "Form field names"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "AnalysisInProgress": {
+        "type": "object",
+        "properties": {
+          "analysis_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "in_progress"
+            ]
+          },
+          "progress": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Progress percentage"
+          },
+          "current_step": {
+            "type": "string",
+            "description": "Current analysis step",
+            "example": "analyzing_links"
+          },
+          "estimated_completion_time": {
+            "type": "string",
+            "description": "Estimated time to completion"
+          }
+        }
+      },
+      "AnalysisError": {
+        "type": "object",
+        "properties": {
+          "analysis_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "failed"
+            ]
+          },
+          "error": {
+            "type": "string",
+            "description": "Error type"
+          },
+          "error_message": {
+            "type": "string",
+            "description": "Human-readable error message"
+          },
+          "http_status_code": {
+            "type": "integer",
+            "description": "HTTP status code from the target URL (if applicable)"
+          },
+          "details": {
+            "type": "string",
+            "description": "Additional error details"
+          }
+        }
+      },
+      "LivenessResponse": {
+        "type": "object",
+        "required": [
+          "status",
+          "timestamp",
+          "version"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "OK",
+              "DOWN",
+              "MAINTENANCE"
+            ],
+            "description": "Service liveness status"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 timestamp when the check was performed"
+          },
+          "version": {
+            "type": "string",
+            "description": "API version",
+            "example": "v1.0.0"
+          }
+        }
+      },
+      "ReadinessResponse": {
+        "type": "object",
+        "required": [
+          "status",
+          "timestamp",
+          "checks"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "OK",
+              "DOWN",
+              "MAINTENANCE"
+            ],
+            "description": "Overall readiness status - ready only if all dependencies are healthy"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 timestamp when the check was performed"
+          },
+          "version": {
+            "type": "string",
+            "description": "Application version",
+            "example": "1.0.0"
+          },
+          "checks": {
+            "type": "object",
+            "description": "Status of individual dependencies",
+            "properties": {
+              "storage": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "healthy",
+                      "unhealthy",
+                      "unknown"
+                    ],
+                    "description": "Health status of the dependency"
+                  },
+                  "last_checked": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "When this dependency was last checked"
+                  },
+                  "error": {
+                    "type": "string",
+                    "description": "Error message if the dependency is unhealthy",
+                    "example": "Database connection failed"
+                  }
+                }
+              },
+              "cache": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "healthy",
+                      "unhealthy",
+                      "unknown"
+                    ],
+                    "description": "Health status of the dependency"
+                  },
+                  "last_checked": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "When this dependency was last checked"
+                  },
+                  "error": {
+                    "type": "string",
+                    "description": "Error message if the dependency is unhealthy",
+                    "example": "Database connection failed"
+                  }
+                }
+              },
+              "queue": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "healthy",
+                      "unhealthy",
+                      "unknown"
+                    ],
+                    "description": "Health status of the dependency"
+                  },
+                  "last_checked": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "When this dependency was last checked"
+                  },
+                  "error": {
+                    "type": "string",
+                    "description": "Error message if the dependency is unhealthy",
+                    "example": "Database connection failed"
+                  }
+                }
+              }
+            },
+            "additionalProperties": {
+              "type": "object",
+              "required": [
+                "status"
+              ],
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "healthy",
+                    "unhealthy",
+                    "unknown"
+                  ],
+                  "description": "Health status of the dependency"
+                },
+                "last_checked": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "When this dependency was last checked"
+                },
+                "error": {
+                  "type": "string",
+                  "description": "Error message if the dependency is unhealthy",
+                  "example": "Database connection failed"
+                }
+              }
+            }
+          }
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "required": [
+          "status",
+          "timestamp",
+          "checks"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "OK",
+              "DOWN",
+              "MAINTENANCE"
+            ],
+            "description": "Overall health status - OK only if all dependencies are healthy"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 timestamp when the check was performed"
+          },
+          "version": {
+            "type": "string",
+            "description": "Application version",
+            "example": "1.0.0"
+          },
+          "uptime": {
+            "type": "number",
+            "description": "Service uptime in seconds",
+            "example": 3600.5
+          },
+          "checks": {
+            "type": "object",
+            "description": "Status of individual dependencies",
+            "properties": {
+              "storage": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "healthy",
+                      "unhealthy",
+                      "unknown"
+                    ],
+                    "description": "Health status of the dependency"
+                  },
+                  "response_time": {
+                    "type": "number",
+                    "description": "Response time in milliseconds",
+                    "example": 42.5
+                  },
+                  "last_checked": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "When this dependency was last checked"
+                  },
+                  "error": {
+                    "type": "string",
+                    "description": "Error message if the dependency is unhealthy",
+                    "example": "Connection timeout after 5000ms"
+                  },
+                  "details": {
+                    "type": "object",
+                    "description": "Additional dependency-specific information",
+                    "additionalProperties": true
+                  }
+                }
+              },
+              "cache": {
+                "allOf": [
+                  {
+                    "type": "object",
+                    "required": [
+                      "status"
+                    ],
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "healthy",
+                          "unhealthy",
+                          "unknown"
+                        ],
+                        "description": "Health status of the dependency"
+                      },
+                      "response_time": {
+                        "type": "number",
+                        "description": "Response time in milliseconds",
+                        "example": 42.5
+                      },
+                      "last_checked": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "When this dependency was last checked"
+                      },
+                      "error": {
+                        "type": "string",
+                        "description": "Error message if the dependency is unhealthy",
+                        "example": "Connection timeout after 5000ms"
+                      },
+                      "details": {
+                        "type": "object",
+                        "description": "Additional dependency-specific information",
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "details": {
+                        "type": "object",
+                        "properties": {
+                          "total_keys": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Total number of keys in cache",
+                            "example": 1247
+                          },
+                          "pool_stats": {
+                            "type": "object",
+                            "required": [
+                              "hits",
+                              "misses",
+                              "timeouts",
+                              "wait_count",
+                              "wait_duration_ns",
+                              "total_connections",
+                              "idle_connections",
+                              "stale_connections"
+                            ],
+                            "properties": {
+                              "hits": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "description": "Number of times free connection was found in the pool",
+                                "example": 1250
+                              },
+                              "misses": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "description": "Number of times free connection was NOT found in the pool",
+                                "example": 42
+                              },
+                              "timeouts": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "description": "Number of times a wait timeout occurred",
+                                "example": 3
+                              },
+                              "wait_count": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "description": "Number of times a connection was waited",
+                                "example": 45
+                              },
+                              "wait_duration_ns": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "description": "Total time spent for waiting a connection in nanoseconds",
+                                "example": 15000000
+                              },
+                              "total_connections": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "description": "Number of total connections in the pool",
+                                "example": 10
+                              },
+                              "idle_connections": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "description": "Number of idle connections in the pool",
+                                "example": 7
+                              },
+                              "stale_connections": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "description": "Number of stale connections removed from the pool",
+                                "example": 2
+                              }
+                            }
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                ]
+              },
+              "queue": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "healthy",
+                      "unhealthy",
+                      "unknown"
+                    ],
+                    "description": "Health status of the dependency"
+                  },
+                  "response_time": {
+                    "type": "number",
+                    "description": "Response time in milliseconds",
+                    "example": 42.5
+                  },
+                  "last_checked": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "When this dependency was last checked"
+                  },
+                  "error": {
+                    "type": "string",
+                    "description": "Error message if the dependency is unhealthy",
+                    "example": "Connection timeout after 5000ms"
+                  },
+                  "details": {
+                    "type": "object",
+                    "description": "Additional dependency-specific information",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            },
+            "additionalProperties": {
+              "type": "object",
+              "required": [
+                "status"
+              ],
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "healthy",
+                    "unhealthy",
+                    "unknown"
+                  ],
+                  "description": "Health status of the dependency"
+                },
+                "response_time": {
+                  "type": "number",
+                  "description": "Response time in milliseconds",
+                  "example": 42.5
+                },
+                "last_checked": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "When this dependency was last checked"
+                },
+                "error": {
+                  "type": "string",
+                  "description": "Error message if the dependency is unhealthy",
+                  "example": "Connection timeout after 5000ms"
+                },
+                "details": {
+                  "type": "object",
+                  "description": "Additional dependency-specific information",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "AnalysisData": {
+        "type": "object",
+        "properties": {
+          "html_version": {
+            "type": "string",
+            "description": "Detected HTML version",
+            "example": "HTML5"
+          },
+          "title": {
+            "type": "string",
+            "description": "Page title",
+            "example": "Example Domain"
+          },
+          "heading_counts": {
+            "type": "object",
+            "properties": {
+              "h1": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "h2": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "h3": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "h4": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "h5": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "h6": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "links": {
+            "type": "object",
+            "properties": {
+              "internal_count": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Number of internal links"
+              },
+              "external_count": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Number of external links"
+              },
+              "total_count": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Total number of links"
+              },
+              "inaccessible_links": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "status_code": {
+                      "type": "integer",
+                      "description": "HTTP status code received"
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Error description"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "forms": {
+            "type": "object",
+            "properties": {
+              "total_count": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Total number of forms found"
+              },
+              "login_forms_detected": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Number of login forms detected"
+              },
+              "login_form_details": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "method": {
+                      "type": "string",
+                      "enum": [
+                        "POST"
+                      ],
+                      "description": "Form submission method"
+                    },
+                    "action": {
+                      "type": "string",
+                      "description": "Form action URL"
+                    },
+                    "fields": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Form field names"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "LinkAnalysis": {
+        "type": "object",
+        "properties": {
+          "internal_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of internal links"
+          },
+          "external_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of external links"
+          },
+          "total_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Total number of links"
+          },
+          "inaccessible_links": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "format": "uri"
+                },
+                "status_code": {
+                  "type": "integer",
+                  "description": "HTTP status code received"
+                },
+                "error": {
+                  "type": "string",
+                  "description": "Error description"
+                }
+              }
+            }
+          }
+        }
+      },
+      "InaccessibleLink": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "status_code": {
+            "type": "integer",
+            "description": "HTTP status code received"
+          },
+          "error": {
+            "type": "string",
+            "description": "Error description"
+          }
+        }
+      },
+      "FormAnalysis": {
+        "type": "object",
+        "properties": {
+          "total_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Total number of forms found"
+          },
+          "login_forms_detected": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of login forms detected"
+          },
+          "login_form_details": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "method": {
+                  "type": "string",
+                  "enum": [
+                    "POST"
+                  ],
+                  "description": "Form submission method"
+                },
+                "action": {
+                  "type": "string",
+                  "description": "Form action URL"
+                },
+                "fields": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Form field names"
+                }
+              }
+            }
+          }
+        }
+      },
+      "LoginForm": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "POST"
+            ],
+            "description": "Form submission method"
+          },
+          "action": {
+            "type": "string",
+            "description": "Form action URL"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Form field names"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Error code"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable error message"
+          },
+          "details": {
+            "type": "string",
+            "description": "Additional error details"
+          },
+          "status_code": {
+            "type": "integer",
+            "description": "HTTP status code"
+          },
+          "retry_after": {
+            "type": "integer",
+            "description": "Seconds to wait before retrying (for rate limit errors)"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Pagination": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "total_pages": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "has_next": {
+            "type": "boolean"
+          },
+          "has_previous": {
+            "type": "boolean"
+          }
+        }
+      },
+      "DependencyCheck": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "unhealthy",
+              "unknown"
+            ],
+            "description": "Health status of the dependency"
+          },
+          "last_checked": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When this dependency was last checked"
+          },
+          "error": {
+            "type": "string",
+            "description": "Error message if the dependency is unhealthy",
+            "example": "Database connection failed"
+          }
+        }
+      },
+      "health-response.v1_DependencyCheck": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "unhealthy",
+              "unknown"
+            ],
+            "description": "Health status of the dependency"
+          },
+          "response_time": {
+            "type": "number",
+            "description": "Response time in milliseconds",
+            "example": 42.5
+          },
+          "last_checked": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When this dependency was last checked"
+          },
+          "error": {
+            "type": "string",
+            "description": "Error message if the dependency is unhealthy",
+            "example": "Connection timeout after 5000ms"
+          },
+          "details": {
+            "type": "object",
+            "description": "Additional dependency-specific information",
+            "additionalProperties": true
+          }
+        }
+      },
+      "PoolStats": {
+        "type": "object",
+        "required": [
+          "hits",
+          "misses",
+          "timeouts",
+          "wait_count",
+          "wait_duration_ns",
+          "total_connections",
+          "idle_connections",
+          "stale_connections"
+        ],
+        "properties": {
+          "hits": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of times free connection was found in the pool",
+            "example": 1250
+          },
+          "misses": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of times free connection was NOT found in the pool",
+            "example": 42
+          },
+          "timeouts": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of times a wait timeout occurred",
+            "example": 3
+          },
+          "wait_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of times a connection was waited",
+            "example": 45
+          },
+          "wait_duration_ns": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Total time spent for waiting a connection in nanoseconds",
+            "example": 15000000
+          },
+          "total_connections": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of total connections in the pool",
+            "example": 10
+          },
+          "idle_connections": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of idle connections in the pool",
+            "example": 7
+          },
+          "stale_connections": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of stale connections removed from the pool",
+            "example": 2
+          }
+        }
+      },
+      "CacheDependencyCheck": {
+        "allOf": [
+          {
+            "type": "object",
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "healthy",
+                  "unhealthy",
+                  "unknown"
+                ],
+                "description": "Health status of the dependency"
+              },
+              "response_time": {
+                "type": "number",
+                "description": "Response time in milliseconds",
+                "example": 42.5
+              },
+              "last_checked": {
+                "type": "string",
+                "format": "date-time",
+                "description": "When this dependency was last checked"
+              },
+              "error": {
+                "type": "string",
+                "description": "Error message if the dependency is unhealthy",
+                "example": "Connection timeout after 5000ms"
+              },
+              "details": {
+                "type": "object",
+                "description": "Additional dependency-specific information",
+                "additionalProperties": true
+              }
+            }
+          },
+          {
+            "type": "object",
+            "properties": {
+              "details": {
+                "type": "object",
+                "properties": {
+                  "total_keys": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Total number of keys in cache",
+                    "example": 1247
+                  },
+                  "pool_stats": {
+                    "type": "object",
+                    "required": [
+                      "hits",
+                      "misses",
+                      "timeouts",
+                      "wait_count",
+                      "wait_duration_ns",
+                      "total_connections",
+                      "idle_connections",
+                      "stale_connections"
+                    ],
+                    "properties": {
+                      "hits": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Number of times free connection was found in the pool",
+                        "example": 1250
+                      },
+                      "misses": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Number of times free connection was NOT found in the pool",
+                        "example": 42
+                      },
+                      "timeouts": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Number of times a wait timeout occurred",
+                        "example": 3
+                      },
+                      "wait_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Number of times a connection was waited",
+                        "example": 45
+                      },
+                      "wait_duration_ns": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Total time spent for waiting a connection in nanoseconds",
+                        "example": 15000000
+                      },
+                      "total_connections": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Number of total connections in the pool",
+                        "example": 10
+                      },
+                      "idle_connections": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Number of idle connections in the pool",
+                        "example": 7
+                      },
+                      "stale_connections": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Number of stale connections removed from the pool",
+                        "example": 2
+                      }
+                    }
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        ]
+      }
+    },
+    "responses": {
+      "bad_request": {
+        "description": "Bad request - Invalid URL or parameters",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "description": "Error code"
+                },
+                "message": {
+                  "type": "string",
+                  "description": "Human-readable error message"
+                },
+                "details": {
+                  "type": "string",
+                  "description": "Additional error details"
+                },
+                "status_code": {
+                  "type": "integer",
+                  "description": "HTTP status code"
+                },
+                "retry_after": {
+                  "type": "integer",
+                  "description": "Seconds to wait before retrying (for rate limit errors)"
+                },
+                "timestamp": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            },
+            "examples": {
+              "invalid_url": {
+                "summary": "Invalid URL format",
+                "value": {
+                  "error": "invalid_url",
+                  "message": "The provided URL is not valid",
+                  "details": "URL must be a valid HTTP or HTTPS URL",
+                  "status_code": 400,
+                  "timestamp": "2025-01-15T10:30:00Z"
+                }
+              },
+              "missing_required_field": {
+                "summary": "Missing required field",
+                "value": {
+                  "error": "missing_required_field",
+                  "message": "Required field is missing",
+                  "details": "The 'url' field is required",
+                  "status_code": 400,
+                  "timestamp": "2025-01-15T10:30:00Z"
+                }
+              },
+              "invalid_options": {
+                "summary": "Invalid analysis options",
+                "value": {
+                  "error": "invalid_options",
+                  "message": "Invalid analysis options provided",
+                  "details": "Timeout must be between 5 and 300 seconds",
+                  "status_code": 400,
+                  "timestamp": "2025-01-15T10:30:00Z"
+                }
+              }
+            }
+          }
+        }
+      },
+      "unauthorized": {
+        "description": "Unauthorized - Invalid or missing authentication",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "description": "Error code"
+                },
+                "message": {
+                  "type": "string",
+                  "description": "Human-readable error message"
+                },
+                "details": {
+                  "type": "string",
+                  "description": "Additional error details"
+                },
+                "status_code": {
+                  "type": "integer",
+                  "description": "HTTP status code"
+                },
+                "retry_after": {
+                  "type": "integer",
+                  "description": "Seconds to wait before retrying (for rate limit errors)"
+                },
+                "timestamp": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            },
+            "examples": {
+              "missing_token": {
+                "summary": "Missing authentication token",
+                "value": {
+                  "error": "missing_token",
+                  "message": "Authentication token is required",
+                  "details": "Please provide a valid Bearer token in the Authorization header",
+                  "status_code": 401,
+                  "timestamp": "2025-01-15T10:30:00Z"
+                }
+              },
+              "invalid_token": {
+                "summary": "Invalid authentication token",
+                "value": {
+                  "error": "invalid_token",
+                  "message": "Authentication token is invalid",
+                  "details": "The provided token is malformed or expired",
+                  "status_code": 401,
+                  "timestamp": "2025-01-15T10:30:00Z"
+                }
+              },
+              "expired_token": {
+                "summary": "Expired authentication token",
+                "value": {
+                  "error": "expired_token",
+                  "message": "Authentication token has expired",
+                  "details": "Please refresh your token or login again",
+                  "status_code": 401,
+                  "timestamp": "2025-01-15T10:30:00Z"
+                }
+              },
+              "invalid_credentials": {
+                "summary": "Invalid login credentials",
+                "value": {
+                  "error": "invalid_credentials",
+                  "message": "Invalid email or password",
+                  "details": "Please check your credentials and try again",
+                  "status_code": 401,
+                  "timestamp": "2025-01-15T10:30:00Z"
+                }
+              }
+            }
+          }
+        }
+      },
+      "rate_limit": {
+        "description": "Too many requests - Rate limit exceeded",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "description": "Error code"
+                },
+                "message": {
+                  "type": "string",
+                  "description": "Human-readable error message"
+                },
+                "details": {
+                  "type": "string",
+                  "description": "Additional error details"
+                },
+                "status_code": {
+                  "type": "integer",
+                  "description": "HTTP status code"
+                },
+                "retry_after": {
+                  "type": "integer",
+                  "description": "Seconds to wait before retrying (for rate limit errors)"
+                },
+                "timestamp": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            },
+            "examples": {
+              "rate_limit_exceeded": {
+                "summary": "Rate limit exceeded",
+                "value": {
+                  "error": "rate_limit_exceeded",
+                  "message": "Too many requests. Please try again later",
+                  "details": "Rate limit: 10 requests per minute",
+                  "status_code": 429,
+                  "retry_after": 60,
+                  "timestamp": "2025-01-15T10:30:00Z"
+                }
+              },
+              "daily_limit_exceeded": {
+                "summary": "Daily limit exceeded",
+                "value": {
+                  "error": "daily_limit_exceeded",
+                  "message": "Daily analysis limit exceeded",
+                  "details": "Free users are limited to 100 analyses per day",
+                  "status_code": 429,
+                  "retry_after": 86400,
+                  "timestamp": "2025-01-15T10:30:00Z"
+                }
+              }
+            }
+          }
+        }
+      },
+      "server_error": {
+        "description": "Internal server error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "description": "Error code"
+                },
+                "message": {
+                  "type": "string",
+                  "description": "Human-readable error message"
+                },
+                "details": {
+                  "type": "string",
+                  "description": "Additional error details"
+                },
+                "status_code": {
+                  "type": "integer",
+                  "description": "HTTP status code"
+                },
+                "retry_after": {
+                  "type": "integer",
+                  "description": "Seconds to wait before retrying (for rate limit errors)"
+                },
+                "timestamp": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            },
+            "examples": {
+              "internal_server_error": {
+                "summary": "Internal server error",
+                "value": {
+                  "error": "internal_server_error",
+                  "message": "An unexpected error occurred",
+                  "details": "Please try again later. If the problem persists, contact support",
+                  "status_code": 500,
+                  "timestamp": "2025-01-15T10:30:00Z"
+                }
+              },
+              "service_unavailable": {
+                "summary": "Service temporarily unavailable",
+                "value": {
+                  "error": "service_unavailable",
+                  "message": "Service is temporarily unavailable",
+                  "details": "The service is undergoing maintenance. Please try again in a few minutes",
+                  "status_code": 503,
+                  "timestamp": "2025-01-15T10:30:00Z"
+                }
+              }
+            }
+          }
+        }
+      },
+      "not_found": {
+        "description": "Resource not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "description": "Error code"
+                },
+                "message": {
+                  "type": "string",
+                  "description": "Human-readable error message"
+                },
+                "details": {
+                  "type": "string",
+                  "description": "Additional error details"
+                },
+                "status_code": {
+                  "type": "integer",
+                  "description": "HTTP status code"
+                },
+                "retry_after": {
+                  "type": "integer",
+                  "description": "Seconds to wait before retrying (for rate limit errors)"
+                },
+                "timestamp": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            },
+            "examples": {
+              "analysis_not_found": {
+                "summary": "Analysis not found",
+                "value": {
+                  "error": "analysis_not_found",
+                  "message": "Analysis not found",
+                  "details": "No analysis found with the provided ID",
+                  "status_code": 404,
+                  "timestamp": "2025-01-15T10:30:00Z"
+                }
+              },
+              "user_not_found": {
+                "summary": "User not found",
+                "value": {
+                  "error": "user_not_found",
+                  "message": "User not found",
+                  "details": "No user found with the provided credentials",
+                  "status_code": 404,
+                  "timestamp": "2025-01-15T10:30:00Z"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "examples": {
+      "service_down": {
+        "summary": "Service is down",
+        "value": {
+          "status": "MAINTENANCE",
+          "timestamp": "2025-01-15T10:30:00Z",
+          "version": "v1.0.0"
+        }
+      },
+      "not_ready_service": {
+        "summary": "Service is not ready",
+        "value": {
+          "status": "DOWN",
+          "timestamp": "2025-01-15T10:30:00Z",
+          "version": "1.0.0",
+          "checks": {
+            "storage": {
+              "status": "unhealthy",
+              "last_checked": "2025-01-15T10:30:00Z",
+              "error": "Database connection failed"
+            },
+            "cache": {
+              "status": "unhealthy",
+              "last_checked": "2025-01-15T10:30:00Z",
+              "error": "Redis server unreachable"
+            },
+            "queue": {
+              "status": "unhealthy",
+              "last_checked": "2025-01-15T10:30:00Z",
+              "error": "Message queue connection timeout"
+            }
+          }
+        }
+      },
+      "unhealthy_service": {
+        "summary": "Service is unhealthy",
+        "value": {
+          "status": "DOWN",
+          "timestamp": "2025-01-15T10:30:00Z",
+          "version": "1.0.0",
+          "uptime": 1800.2,
+          "checks": {
+            "storage": {
+              "status": "unhealthy",
+              "last_checked": "2025-01-15T10:30:00Z",
+              "error": "Connection timeout"
+            },
+            "cache": {
+              "status": "unhealthy",
+              "last_checked": "2025-01-15T10:30:00Z",
+              "error": "Redis connection pool exhausted"
+            },
+            "queue": {
+              "status": "unhealthy",
+              "last_checked": "2025-01-15T10:30:00Z",
+              "error": "Message broker unreachable"
+            }
+          }
+        }
+      }
+    }
+  }
+}
