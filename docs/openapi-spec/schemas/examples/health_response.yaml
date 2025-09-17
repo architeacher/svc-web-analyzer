@@ -1,0 +1,55 @@
+healthy_service:
+  summary: Service is healthy
+  value:
+    status: "OK"
+    timestamp: "2025-01-15T10:30:00Z"
+    version: "1.0.0"
+    uptime: 3600.5
+    checks:
+      storage:
+        status: "healthy"
+        response_time: 15.2
+        last_checked: "2025-01-15T10:30:00Z"
+      cache:
+        status: "healthy"
+        response_time: 2.8
+        last_checked: "2025-01-15T10:30:00Z"
+        details:
+          total_keys: 1247
+          pool_stats:
+            hits: 1250
+            misses: 42
+            timeouts: 3
+            wait_count: 45
+            wait_duration_ns: 15000000
+            total_connections: 10
+            idle_connections: 7
+            stale_connections: 2
+      queue:
+        status: "healthy"
+        response_time: 5.4
+        last_checked: "2025-01-15T10:30:00Z"
+        details:
+          pending_jobs: 12
+          active_workers: 3
+
+unhealthy_service:
+  summary: Service is unhealthy
+  value:
+    status: "DOWN"
+    timestamp: "2025-01-15T10:30:00Z"
+    version: "1.0.0"
+    uptime: 1800.2
+    checks:
+      storage:
+        status: "unhealthy"
+        last_checked: "2025-01-15T10:30:00Z"
+        error: "Connection timeout"
+      cache:
+        status: "unhealthy"
+        last_checked: "2025-01-15T10:30:00Z"
+        error: "Redis connection pool exhausted"
+      queue:
+        status: "unhealthy"
+        last_checked: "2025-01-15T10:30:00Z"
+        error: "Message broker unreachable"

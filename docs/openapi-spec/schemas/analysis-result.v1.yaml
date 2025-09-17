@@ -1,0 +1,24 @@
+AnalysisResult:
+  type: object
+  properties:
+    analysis_id:
+      type: string
+      format: uuid
+    url:
+      type: string
+      format: uri
+    status:
+      type: string
+      enum: [completed]
+    created_at:
+      type: string
+      format: date-time
+    completed_at:
+      type: string
+      format: date-time
+    duration:
+      type: string
+      description: Analysis duration
+      example: "15s"
+    results:
+      $ref: './common/analysis.yaml#/AnalysisData'

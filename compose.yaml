@@ -1,0 +1,76 @@
+x-default-secrets: &secrets
+  - source: root_cert_file
+    target: "/etc/ssl/certs/rootCA.pem"
+  - source: cert_file
+    target: "/etc/ssl/certs/ca-cert-star-web-analyzer-dev-crt.pem"
+  - source: key_file
+    target: "/etc/ssl/certs/ca-cert-star-web-analyzer-dev-key.pem"
+
+x-default-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "5m"
+    max-file: "3"
+
+services:
+  traefik:
+    container_name: "web-analyzer-traefik"
+    image: traefik:v3.5
+    networks:
+      - internal
+    ports:
+      - "80:80"
+      - "443:443"
+      - "${FORWARD_TRAEFIK_PORT:-8080}:8080"  # Traefik dashboard
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.web-analyzer.dev`)"
+      - "traefik.http.routers.traefik.entrypoints=websecure"
+      - "traefik.http.routers.traefik.tls=true"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.middlewares.traefik-auth.basicauth.users=admin:$$2y$$10$$XaFeB7K6QhExfm9Zn5LPF.ePqNb6pVHj1LVnNZlpBR6w5QpqsQNa6"  # admin:admin
+    healthcheck:
+      test: [ "CMD-SHELL", "test -n \"$(wget --quiet --spider -S --tries=1 http://localhost:8083/ping 2>&1 | grep '200 OK')\" || exit 1" ]
+      interval: 10s
+      retries: 5
+      start_period: 1s
+      timeout: 1s
+    restart: unless-stopped
+    secrets: *secrets
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "./deployments/docker/traefik:/etc/traefik:ro"
+    command:
+      - "--configFile=/etc/traefik/static.yaml"
+    logging:
+      <<: *default-logging
+
+  swagger-ui:
+    container_name: "web-analyzer-swagger-ui"
+    image: swaggerapi/swagger-ui:v5.29.0
+    networks:
+      - internal
+    environment:
+      SWAGGER_JSON: /oas/svc-web-analyzer-swagger-v1.json
+    volumes:
+      - "./docs/openapi-spec/public:/oas"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.swagger-ui.loadbalancer.server.port=8080"
+      - "traefik.http.routers.swagger-ui.rule=Host(`docs.web-analyzer.dev`)"
+      - "traefik.http.routers.swagger-ui.entrypoints=websecure"
+      - "traefik.http.routers.swagger-ui.tls=true"
+    restart: unless-stopped
+    logging:
+      <<: *default-logging
+
+networks:
+  internal:
+
+secrets:
+  root_cert_file:
+    file: "./.certs/rootCA.pem"
+  cert_file:
+    file: "./.certs/star-web-analyzer-dev.crt"
+  key_file:
+    file: "./.certs/star-web-analyzer-dev.key"

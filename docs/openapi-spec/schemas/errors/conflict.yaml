@@ -1,0 +1,22 @@
+description: Conflict - Resource already exists
+content:
+  application/json:
+    schema:
+      $ref: '../common/error-response.yaml#/ErrorResponse'
+    examples:
+      user_already_exists:
+        summary: User already exists
+        value:
+          error: "user_already_exists"
+          message: "User with this email already exists"
+          details: "Please use a different email address or try logging in"
+          status_code: 409
+          timestamp: "2025-01-15T10:30:00Z"
+      username_taken:
+        summary: Username already taken
+        value:
+          error: "username_taken"
+          message: "Username is already taken"
+          details: "Please choose a different username"
+          status_code: 409
+          timestamp: "2025-01-15T10:30:00Z"

@@ -1,0 +1,29 @@
+page_unreachable:
+  summary: Page unreachable error
+  value:
+    analysis_id: "550e8400-e29b-41d4-a716-446655440000"
+    status: "failed"
+    error: "page_unreachable"
+    error_message: "Failed to fetch page: connection timeout"
+    http_status_code: 0
+    details: "The target URL could not be reached after 3 retry attempts"
+
+forbidden_access:
+  summary: Forbidden access error
+  value:
+    analysis_id: "550e8400-e29b-41d4-a716-446655440001"
+    status: "failed"
+    error: "forbidden_access"
+    error_message: "Access to the requested page is forbidden"
+    http_status_code: 403
+    details: "The server denied access to the requested resource"
+
+invalid_content:
+  summary: Invalid content error
+  value:
+    analysis_id: "550e8400-e29b-41d4-a716-446655440002"
+    status: "failed"
+    error: "invalid_content"
+    error_message: "The page content could not be parsed"
+    http_status_code: 200
+    details: "The response does not contain valid HTML content"

@@ -1,0 +1,21 @@
+AnalysisError:
+  type: object
+  properties:
+    analysis_id:
+      type: string
+      format: uuid
+    status:
+      type: string
+      enum: [failed]
+    error:
+      type: string
+      description: Error type
+    error_message:
+      type: string
+      description: Human-readable error message
+    http_status_code:
+      type: integer
+      description: HTTP status code from the target URL (if applicable)
+    details:
+      type: string
+      description: Additional error details

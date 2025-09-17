@@ -1,0 +1,91 @@
+.DEFAULT: default
+.DEFAULT_GOAL := default
+
+# Delete targets on nonzero exit status.
+.DELETE_ON_ERROR: ;
+.EXPORT_ALL_VARIABLES: ;
+.NOTPARALLEL: ;
+.ONESHELL: ;
+.SHELLFLAGS = -c
+
+# Unless ECHO_RECIPES is defined we do not echo the line of the recipes before they are executed.
+ifneq (true, ${ECHO_RECIPES})
+.SILENT: ;
+endif
+
+# An empty, phony .FORCE target, that will cause external targets to always be built, so that the
+# Makefile there will handle dependencies.
+# https://gist.github.com/mschubert/a0e4f3aeaf3558431890
+.PHONY: .FORCE
+.FORCE: ;
+
+include build/mk/config/settings.mk
+include build/mk/*.mk
+
+.PHONY: default
+default: help ## to run default target.
+
+ENV_FILE := .envrc
+DOT_ENV := .env
+CERTS_DIR := ".certs"
+
+.PHONY: $(ENV_FILE) $(DOT_ENV)
+$(ENV_FILE) $(DOT_ENV):
+	cat .envrc.dist | tee "$(ENV_FILE)" "$(DOT_ENV)" > /dev/null
+
+$(CERTS_DIR):
+	mkdir -p "${CERTS_DIR}"
+
+.PHONY: set-hosts
+set-hosts: ## Update local hosts.
+	$(call printMessage,"🤖  Updating local hosts",$(INFO_CLR))
+	echo "\n# Web Analyzer Hosts\n\
+====================\n\
+127.0.0.1 web-analyzer.dev api.web-analyzer.dev docs.web-analyzer.dev traefik.web-analyzer.dev vault.web-analyzer.dev rabbitmq.web-analyzer.dev" | sudo tee -a /etc/hosts
+
+.PHONY: init
+init: $(ENV_FILE) set-hosts certify
+	go mod vendor
+	$(MAKE) generate-api
+
+.PHONY: start
+start: ## 🐳 Start the Docker containers.
+	$(call printMessage,"🏁  Starting containers",$(INFO_CLR))
+	docker compose \
+		--profile development \
+		-f compose.yaml \
+		up \
+		-d \
+        --force-recreate
+
+.PHONY: destroy
+destroy: ## 🐳 Destroy Docker containers.
+	$(call printMessage,"💣  Destroying containers",$(INFO_CLR))
+	docker compose down --remove-orphans
+
+.PHONY: study
+study: $(CERTS_DIR) ## 👨‍🎓 Studying hard and preparing for certification.
+	$(call printMessage,"📖  Studying for the certification",$(INFO_CLR))
+ifeq (, $(shell which "mkcert"))
+ $(error "Command mkcert not found in $$PATH, please install https://github.com/FiloSottile/mkcert#installation")
+endif
+	mkcert -install
+
+.PHONY: certify
+certify: study ## 📜 Certify .localhost and .dev TLDs.
+	$(call printMessage,"📚  Preparing for the certification",$(INFO_CLR))
+	mkcert -cert-file "${CERTS_DIR}/star-web-analyzer-dev.crt" \
+		-key-file "${CERTS_DIR}/star-web-analyzer-dev.key" \
+		"web-analyzer.dev" "*.web-analyzer.dev"
+	cp "$$(mkcert -CAROOT)/rootCA.pem" "${CERTS_DIR}/"
+
+.PHONY: generate-api
+generate-api:
+	$(call printMessage,"🤖  Generating API specs",$(INFO_CLR))
+	docker run --rm -v $(PWD):/spec redocly/cli:2.2.0 bundle ./docs/openapi-spec/svc-web-analyzer-api.yaml -d --output ./docs/openapi-spec/public/svc-web-analyzer-swagger-v1.json --ext json --config .redocly.yaml && \
+	cd internal/tools && go generate ./...
+
+.PHONY: test
+test: ## 🏃Run tests with race flag 🏁
+	$(call printMessage,"🕸️  Running tests",$(INFO_CLR))
+	go test -v -race ./...

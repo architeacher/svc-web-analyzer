@@ -1,0 +1,24 @@
+description: Too many requests - Rate limit exceeded
+content:
+  application/json:
+    schema:
+      $ref: '../common/error-response.yaml#/ErrorResponse'
+    examples:
+      rate_limit_exceeded:
+        summary: Rate limit exceeded
+        value:
+          error: "rate_limit_exceeded"
+          message: "Too many requests. Please try again later"
+          details: "Rate limit: 10 requests per minute"
+          status_code: 429
+          retry_after: 60
+          timestamp: "2025-01-15T10:30:00Z"
+      daily_limit_exceeded:
+        summary: Daily limit exceeded
+        value:
+          error: "daily_limit_exceeded"
+          message: "Daily analysis limit exceeded"
+          details: "Free users are limited to 100 analyses per day"
+          status_code: 429
+          retry_after: 86400
+          timestamp: "2025-01-15T10:30:00Z"

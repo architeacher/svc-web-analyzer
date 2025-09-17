@@ -1,0 +1,38 @@
+description: PASETO token authentication error
+content:
+  application/json:
+    schema:
+      $ref: '../common/common.yaml#/ErrorResponse'
+    examples:
+      invalid_paseto_token:
+        summary: Invalid PASETO token format
+        value:
+          error: "invalid_paseto_token"
+          message: "PASETO token format is invalid"
+          details: "Token must follow format: paseto.{issuer}.{payload}.{signature}"
+          status_code: 401
+          timestamp: "2025-01-15T10:30:00Z"
+      paseto_issuer_validation_failed:
+        summary: PASETO token issuer validation failed
+        value:
+          error: "paseto_issuer_validation_failed"
+          message: "PASETO token issuer validation failed"
+          details: "The token issuer could not be validated or is not trusted"
+          status_code: 401
+          timestamp: "2025-01-15T10:30:00Z"
+      paseto_token_expired:
+        summary: PASETO token expired
+        value:
+          error: "paseto_token_expired"
+          message: "PASETO token has expired"
+          details: "The token expired at 2025-01-15T09:30:00Z. Please obtain a new token"
+          status_code: 401
+          timestamp: "2025-01-15T10:30:00Z"
+      paseto_signature_invalid:
+        summary: PASETO token signature invalid
+        value:
+          error: "paseto_signature_invalid"
+          message: "PASETO token signature is invalid"
+          details: "The token signature could not be verified"
+          status_code: 401
+          timestamp: "2025-01-15T10:30:00Z"

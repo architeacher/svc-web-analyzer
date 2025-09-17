@@ -1,0 +1,21 @@
+AnalysisInProgress:
+  type: object
+  properties:
+    analysis_id:
+      type: string
+      format: uuid
+    status:
+      type: string
+      enum: [in_progress]
+    progress:
+      type: integer
+      minimum: 0
+      maximum: 100
+      description: Progress percentage
+    current_step:
+      type: string
+      description: Current analysis step
+      example: "analyzing_links"
+    estimated_completion_time:
+      type: string
+      description: Estimated time to completion

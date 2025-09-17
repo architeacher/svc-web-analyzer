@@ -1,0 +1,38 @@
+simple_url:
+  summary: Simple URL analysis
+  value:
+    url: "https://example.com"
+    options:
+      include_headings: true
+      check_links: true
+      detect_forms: true
+
+complex_site:
+  summary: Complex website analysis
+  value:
+    url: "https://github.com"
+    options:
+      include_headings: true
+      check_links: true
+      detect_forms: true
+      timeout: 60
+
+news_website:
+  summary: News website analysis
+  value:
+    url: "https://news.ycombinator.com"
+    options:
+      include_headings: true
+      check_links: false
+      detect_forms: true
+      timeout: 30
+
+ecommerce_site:
+  summary: E-commerce site analysis
+  value:
+    url: "https://example-shop.com"
+    options:
+      include_headings: true
+      check_links: true
+      detect_forms: true
+      timeout: 45

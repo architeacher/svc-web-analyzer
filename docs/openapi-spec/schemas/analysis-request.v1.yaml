@@ -1,0 +1,33 @@
+AnalyzeRequest:
+  type: object
+  required:
+    - url
+  properties:
+    url:
+      type: string
+      format: uri
+      minLength: 3
+      maxLength: 10000
+      description: The URL to analyze (supports absolute URLs, relative paths, and internal links)
+      example: "https://example.com"
+    options:
+      type: object
+      properties:
+        include_headings:
+          type: boolean
+          default: true
+          description: Whether to include heading analysis
+        check_links:
+          type: boolean
+          default: true
+          description: Whether to check link accessibility
+        detect_forms:
+          type: boolean
+          default: true
+          description: Whether to detect login forms
+        timeout:
+          type: integer
+          minimum: 5
+          maximum: 300
+          default: 30
+          description: Request timeout in seconds

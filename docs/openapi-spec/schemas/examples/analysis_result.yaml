@@ -1,0 +1,69 @@
+completed_analysis:
+  summary: Completed analysis result
+  value:
+    analysis_id: "550e8400-e29b-41d4-a716-446655440000"
+    url: "https://example.com"
+    status: "completed"
+    created_at: "2025-01-15T10:30:00Z"
+    completed_at: "2025-01-15T10:30:15Z"
+    duration: "15s"
+    results:
+      html_version: "HTML5"
+      title: "Example Domain"
+      heading_counts:
+        h1: 1
+        h2: 3
+        h3: 5
+        h4: 2
+        h5: 0
+        h6: 0
+      links:
+        internal_count: 15
+        external_count: 8
+        total_count: 23
+        inaccessible_links:
+          - url: "https://broken.example.com"
+            status_code: 404
+            error: "Not Found"
+          - url: "https://timeout.example.com"
+            status_code: 0
+            error: "Connection timeout"
+      forms:
+        total_count: 2
+        login_forms_detected: 1
+        login_form_details:
+          - method: "POST"
+            action: "/login"
+            fields: ["username", "password"]
+
+github_analysis:
+  summary: GitHub homepage analysis
+  value:
+    analysis_id: "550e8400-e29b-41d4-a716-446655440001"
+    url: "https://github.com"
+    status: "completed"
+    created_at: "2025-01-15T10:35:00Z"
+    completed_at: "2025-01-15T10:35:45Z"
+    duration: "45s"
+    results:
+      html_version: "HTML5"
+      title: "GitHub: Let's build from here"
+      heading_counts:
+        h1: 2
+        h2: 8
+        h3: 12
+        h4: 5
+        h5: 3
+        h6: 1
+      links:
+        internal_count: 150
+        external_count: 25
+        total_count: 175
+        inaccessible_links: []
+      forms:
+        total_count: 3
+        login_forms_detected: 1
+        login_form_details:
+          - method: "POST"
+            action: "/session"
+            fields: ["login", "password"]

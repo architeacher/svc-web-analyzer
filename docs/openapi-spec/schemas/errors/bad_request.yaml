@@ -1,0 +1,30 @@
+description: Bad request - Invalid URL or parameters
+content:
+  application/json:
+    schema:
+      $ref: '../common/error-response.yaml#/ErrorResponse'
+    examples:
+      invalid_url:
+        summary: Invalid URL format
+        value:
+          error: "invalid_url"
+          message: "The provided URL is not valid"
+          details: "URL must be a valid HTTP or HTTPS URL"
+          status_code: 400
+          timestamp: "2025-01-15T10:30:00Z"
+      missing_required_field:
+        summary: Missing required field
+        value:
+          error: "missing_required_field"
+          message: "Required field is missing"
+          details: "The 'url' field is required"
+          status_code: 400
+          timestamp: "2025-01-15T10:30:00Z"
+      invalid_options:
+        summary: Invalid analysis options
+        value:
+          error: "invalid_options"
+          message: "Invalid analysis options provided"
+          details: "Timeout must be between 5 and 300 seconds"
+          status_code: 400
+          timestamp: "2025-01-15T10:30:00Z"

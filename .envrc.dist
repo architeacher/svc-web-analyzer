@@ -1,0 +1,5 @@
+# +-------+
+# | Proxy |
+# +-------+
+
+FORWARD_TRAEFIK_PORT=8080

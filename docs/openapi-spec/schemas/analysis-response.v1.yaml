@@ -1,0 +1,23 @@
+AnalysisResponse:
+  type: object
+  properties:
+    analysis_id:
+      type: string
+      format: uuid
+      description: Unique identifier for the analysis
+    status:
+      type: string
+      enum: [requested, in_progress, completed, failed]
+      description: Current status of the analysis
+    url:
+      type: string
+      format: uri
+      description: The URL being analyzed
+    estimated_completion_time:
+      type: string
+      description: Estimated time to completion
+      example: "30s"
+    created_at:
+      type: string
+      format: date-time
+      description: When the analysis was created

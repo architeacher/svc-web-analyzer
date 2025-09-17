@@ -1,0 +1,32 @@
+LinkAnalysis:
+  type: object
+  properties:
+    internal_count:
+      type: integer
+      minimum: 0
+      description: Number of internal links
+    external_count:
+      type: integer
+      minimum: 0
+      description: Number of external links
+    total_count:
+      type: integer
+      minimum: 0
+      description: Total number of links
+    inaccessible_links:
+      type: array
+      items:
+        $ref: '#/InaccessibleLink'
+
+InaccessibleLink:
+  type: object
+  properties:
+    url:
+      type: string
+      format: uri
+    status_code:
+      type: integer
+      description: HTTP status code received
+    error:
+      type: string
+      description: Error description

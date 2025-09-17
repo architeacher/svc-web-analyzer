@@ -1,0 +1,13 @@
+service_ok:
+  summary: Service is OK
+  value:
+    status: "OK"
+    timestamp: "2025-01-15T10:30:00Z"
+    version: "v1.0.0"
+
+service_down:
+  summary: Service is down
+  value:
+    status: "MAINTENANCE"
+    timestamp: "2025-01-15T10:30:00Z"
+    version: "v1.0.0"

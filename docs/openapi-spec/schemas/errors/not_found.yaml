@@ -1,0 +1,22 @@
+description: Resource not found
+content:
+  application/json:
+    schema:
+      $ref: '../common/error-response.yaml#/ErrorResponse'
+    examples:
+      analysis_not_found:
+        summary: Analysis not found
+        value:
+          error: "analysis_not_found"
+          message: "Analysis not found"
+          details: "No analysis found with the provided ID"
+          status_code: 404
+          timestamp: "2025-01-15T10:30:00Z"
+      user_not_found:
+        summary: User not found
+        value:
+          error: "user_not_found"
+          message: "User not found"
+          details: "No user found with the provided credentials"
+          status_code: 404
+          timestamp: "2025-01-15T10:30:00Z"

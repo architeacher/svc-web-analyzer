@@ -1,0 +1,21 @@
+ErrorResponse:
+  type: object
+  properties:
+    error:
+      type: string
+      description: Error code
+    message:
+      type: string
+      description: Human-readable error message
+    details:
+      type: string
+      description: Additional error details
+    status_code:
+      type: integer
+      description: HTTP status code
+    retry_after:
+      type: integer
+      description: Seconds to wait before retrying (for rate limit errors)
+    timestamp:
+      type: string
+      format: date-time

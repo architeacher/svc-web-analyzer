@@ -1,0 +1,5 @@
+apis:
+  main:
+    root: ./docs/openapi-spec/svc-web-analyzer-api.yaml
+    decorators:
+      remove-x-internal: on

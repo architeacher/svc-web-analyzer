@@ -1,0 +1,49 @@
+ReadinessResponse:
+  type: object
+  required:
+    - status
+    - timestamp
+    - checks
+  properties:
+    status:
+      type: string
+      enum: [OK, DOWN, MAINTENANCE]
+      description: Overall readiness status - ready only if all dependencies are healthy
+    timestamp:
+      type: string
+      format: date-time
+      description: ISO 8601 timestamp when the check was performed
+    version:
+      type: string
+      description: Application version
+      example: "1.0.0"
+    checks:
+      type: object
+      description: Status of individual dependencies
+      properties:
+        storage:
+          $ref: '#/DependencyCheck'
+        cache:
+          $ref: '#/DependencyCheck'
+        queue:
+          $ref: '#/DependencyCheck'
+      additionalProperties:
+        $ref: '#/DependencyCheck'
+
+DependencyCheck:
+  type: object
+  required:
+    - status
+  properties:
+    status:
+      type: string
+      enum: [healthy, unhealthy, unknown]
+      description: Health status of the dependency
+    last_checked:
+      type: string
+      format: date-time
+      description: When this dependency was last checked
+    error:
+      type: string
+      description: Error message if the dependency is unhealthy
+      example: "Database connection failed"

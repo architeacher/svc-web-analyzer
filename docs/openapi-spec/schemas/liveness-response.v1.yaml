@@ -1,0 +1,19 @@
+LivenessResponse:
+  type: object
+  required:
+    - status
+    - timestamp
+    - version
+  properties:
+    status:
+      type: string
+      enum: [OK, DOWN, MAINTENANCE]
+      description: Service liveness status
+    timestamp:
+      type: string
+      format: date-time
+      description: ISO 8601 timestamp when the check was performed
+    version:
+      type: string
+      description: API version
+      example: "v1.0.0"

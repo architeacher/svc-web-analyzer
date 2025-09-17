@@ -1,0 +1,26 @@
+in_progress:
+  summary: Analysis in progress
+  value:
+    analysis_id: "550e8400-e29b-41d4-a716-446655440000"
+    status: "in_progress"
+    progress: 65
+    current_step: "analyzing_links"
+    estimated_completion_time: "10s"
+
+fetching_page:
+  summary: Fetching page content
+  value:
+    analysis_id: "550e8400-e29b-41d4-a716-446655440001"
+    status: "in_progress"
+    progress: 25
+    current_step: "fetching_page"
+    estimated_completion_time: "25s"
+
+analyzing_forms:
+  summary: Analyzing forms
+  value:
+    analysis_id: "550e8400-e29b-41d4-a716-446655440002"
+    status: "in_progress"
+    progress: 85
+    current_step: "analyzing_forms"
+    estimated_completion_time: "5s"

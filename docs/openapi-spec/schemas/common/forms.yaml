@@ -1,0 +1,31 @@
+FormAnalysis:
+  type: object
+  properties:
+    total_count:
+      type: integer
+      minimum: 0
+      description: Total number of forms found
+    login_forms_detected:
+      type: integer
+      minimum: 0
+      description: Number of login forms detected
+    login_form_details:
+      type: array
+      items:
+        $ref: '#/LoginForm'
+
+LoginForm:
+  type: object
+  properties:
+    method:
+      type: string
+      enum: [POST]
+      description: Form submission method
+    action:
+      type: string
+      description: Form action URL
+    fields:
+      type: array
+      items:
+        type: string
+      description: Form field names

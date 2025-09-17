@@ -1,0 +1,50 @@
+# API Versioning Examples
+
+url_path_versioning:
+  summary: URL path versioning (primary method)
+  description: |
+    The recommended approach for API versioning using URL path segments.
+  value:
+    request_url: "https://api.web-analyzer.com/v1/analyze"
+    headers:
+      Authorization: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+      Content-Type: "application/json"
+
+header_versioning:
+  summary: Header-based API versioning
+  description: |
+    Alternative versioning approach using the API-Version header.
+    Useful when URL structure needs to remain consistent.
+  value:
+    request_url: "https://api.web-analyzer.com/analyze"
+    headers:
+      API-Version: "v1"
+      Authorization: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+      Content-Type: "application/json"
+
+content_type_versioning:
+  summary: Content-Type versioning for specific operations
+  description: |
+    Vendor-specific content type versioning for specialized endpoints.
+    Used for advanced features or custom response formats.
+  value:
+    request_url: "https://api.web-analyzer.com/v1/analyze"
+    headers:
+      Authorization: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+      Content-Type: "application/vnd.web-analyzer.v1+json"
+      Accept: "application/vnd.web-analyzer.v1+json"
+
+standard_response:
+  summary: Standard API response with version information
+  description: |
+    Example of a standard API response showing version information in headers.
+  value:
+    response_headers:
+      API-Version: "v1"
+      Content-Type: "application/json"
+    response_body:
+      analysis_id: "550e8400-e29b-41d4-a716-446655440000"
+      status: "requested"
+      url: "https://example.com"
+      _meta:
+        api_version: "v1"

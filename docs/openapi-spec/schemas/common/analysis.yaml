@@ -1,0 +1,36 @@
+AnalysisData:
+  type: object
+  properties:
+    html_version:
+      type: string
+      description: Detected HTML version
+      example: "HTML5"
+    title:
+      type: string
+      description: Page title
+      example: "Example Domain"
+    heading_counts:
+      type: object
+      properties:
+        h1:
+          type: integer
+          minimum: 0
+        h2:
+          type: integer
+          minimum: 0
+        h3:
+          type: integer
+          minimum: 0
+        h4:
+          type: integer
+          minimum: 0
+        h5:
+          type: integer
+          minimum: 0
+        h6:
+          type: integer
+          minimum: 0
+    links:
+      $ref: './links.yaml#/LinkAnalysis'
+    forms:
+      $ref: './forms.yaml#/FormAnalysis'

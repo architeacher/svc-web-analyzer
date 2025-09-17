@@ -1,0 +1,22 @@
+description: Internal server error
+content:
+  application/json:
+    schema:
+      $ref: '../common/error-response.yaml#/ErrorResponse'
+    examples:
+      internal_server_error:
+        summary: Internal server error
+        value:
+          error: "internal_server_error"
+          message: "An unexpected error occurred"
+          details: "Please try again later. If the problem persists, contact support"
+          status_code: 500
+          timestamp: "2025-01-15T10:30:00Z"
+      service_unavailable:
+        summary: Service temporarily unavailable
+        value:
+          error: "service_unavailable"
+          message: "Service is temporarily unavailable"
+          details: "The service is undergoing maintenance. Please try again in a few minutes"
+          status_code: 503
+          timestamp: "2025-01-15T10:30:00Z"

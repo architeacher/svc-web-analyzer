@@ -1,0 +1,38 @@
+description: Unauthorized - Invalid or missing authentication
+content:
+  application/json:
+    schema:
+      $ref: '../common/error-response.yaml#/ErrorResponse'
+    examples:
+      missing_token:
+        summary: Missing authentication token
+        value:
+          error: "missing_token"
+          message: "Authentication token is required"
+          details: "Please provide a valid Bearer token in the Authorization header"
+          status_code: 401
+          timestamp: "2025-01-15T10:30:00Z"
+      invalid_token:
+        summary: Invalid authentication token
+        value:
+          error: "invalid_token"
+          message: "Authentication token is invalid"
+          details: "The provided token is malformed or expired"
+          status_code: 401
+          timestamp: "2025-01-15T10:30:00Z"
+      expired_token:
+        summary: Expired authentication token
+        value:
+          error: "expired_token"
+          message: "Authentication token has expired"
+          details: "Please refresh your token or login again"
+          status_code: 401
+          timestamp: "2025-01-15T10:30:00Z"
+      invalid_credentials:
+        summary: Invalid login credentials
+        value:
+          error: "invalid_credentials"
+          message: "Invalid email or password"
+          details: "Please check your credentials and try again"
+          status_code: 401
+          timestamp: "2025-01-15T10:30:00Z"

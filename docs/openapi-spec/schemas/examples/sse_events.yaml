@@ -1,0 +1,35 @@
+progress_events:
+  summary: SSE progress events
+  value: |
+    event: started
+    data: {"analysis_id": "550e8400-e29b-41d4-a716-446655440000", "status": "started", "timestamp": "2025-01-15T10:30:00Z"}
+
+    event: progress
+    data: {"step": "fetching_page", "progress": 25, "message": "Fetching page content...", "timestamp": "2025-01-15T10:30:05Z"}
+
+    event: progress
+    data: {"step": "parsing_html", "progress": 50, "message": "Parsing HTML content...", "timestamp": "2025-01-15T10:30:08Z"}
+
+    event: step_completed
+    data: {"step": "html_analysis", "progress": 60, "results": {"html_version": "HTML5", "title": "Example Domain"}, "timestamp": "2025-01-15T10:30:10Z"}
+
+    event: progress
+    data: {"step": "analyzing_links", "progress": 75, "message": "Analyzing links...", "timestamp": "2025-01-15T10:30:12Z"}
+
+    event: step_completed
+    data: {"step": "link_analysis", "progress": 90, "results": {"internal_count": 15, "external_count": 8}, "timestamp": "2025-01-15T10:30:14Z"}
+
+    event: completed
+    data: {"analysis_id": "550e8400-e29b-41d4-a716-446655440000", "status": "completed", "timestamp": "2025-01-15T10:30:15Z"}
+
+error_event:
+  summary: SSE error event
+  value: |
+    event: started
+    data: {"analysis_id": "550e8400-e29b-41d4-a716-446655440001", "status": "started", "timestamp": "2025-01-15T10:30:00Z"}
+
+    event: progress
+    data: {"step": "fetching_page", "progress": 25, "message": "Fetching page content...", "timestamp": "2025-01-15T10:30:05Z"}
+
+    event: error
+    data: {"analysis_id": "550e8400-e29b-41d4-a716-446655440001", "status": "failed", "error": "page_unreachable", "message": "Connection timeout", "timestamp": "2025-01-15T10:30:30Z"}

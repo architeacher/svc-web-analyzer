@@ -1,0 +1,131 @@
+HealthResponse:
+  type: object
+  required:
+    - status
+    - timestamp
+    - checks
+  properties:
+    status:
+      type: string
+      enum: [OK, DOWN, MAINTENANCE]
+      description: Overall health status - OK only if all dependencies are healthy
+    timestamp:
+      type: string
+      format: date-time
+      description: ISO 8601 timestamp when the check was performed
+    version:
+      type: string
+      description: Application version
+      example: "1.0.0"
+    uptime:
+      type: number
+      description: Service uptime in seconds
+      example: 3600.5
+    checks:
+      type: object
+      description: Status of individual dependencies
+      properties:
+        storage:
+          $ref: '#/DependencyCheck'
+        cache:
+          $ref: '#/CacheDependencyCheck'
+        queue:
+          $ref: '#/DependencyCheck'
+      additionalProperties:
+        $ref: '#/DependencyCheck'
+
+DependencyCheck:
+  type: object
+  required:
+    - status
+  properties:
+    status:
+      type: string
+      enum: [healthy, unhealthy, unknown]
+      description: Health status of the dependency
+    response_time:
+      type: number
+      description: Response time in milliseconds
+      example: 42.5
+    last_checked:
+      type: string
+      format: date-time
+      description: When this dependency was last checked
+    error:
+      type: string
+      description: Error message if the dependency is unhealthy
+      example: "Connection timeout after 5000ms"
+    details:
+      type: object
+      description: Additional dependency-specific information
+      additionalProperties: true
+
+CacheDependencyCheck:
+  allOf:
+    - $ref: '#/DependencyCheck'
+    - type: object
+      properties:
+        details:
+          type: object
+          properties:
+            total_keys:
+              type: integer
+              minimum: 0
+              description: Total number of keys in cache
+              example: 1247
+            pool_stats:
+              $ref: '#/PoolStats'
+          additionalProperties: true
+
+PoolStats:
+  type: object
+  required:
+    - hits
+    - misses
+    - timeouts
+    - wait_count
+    - wait_duration_ns
+    - total_connections
+    - idle_connections
+    - stale_connections
+  properties:
+    hits:
+      type: integer
+      minimum: 0
+      description: Number of times free connection was found in the pool
+      example: 1250
+    misses:
+      type: integer
+      minimum: 0
+      description: Number of times free connection was NOT found in the pool
+      example: 42
+    timeouts:
+      type: integer
+      minimum: 0
+      description: Number of times a wait timeout occurred
+      example: 3
+    wait_count:
+      type: integer
+      minimum: 0
+      description: Number of times a connection was waited
+      example: 45
+    wait_duration_ns:
+      type: integer
+      minimum: 0
+      description: Total time spent for waiting a connection in nanoseconds
+      example: 15000000
+    total_connections:
+      type: integer
+      minimum: 0
+      description: Number of total connections in the pool
+      example: 10
+    idle_connections:
+      type: integer
+      minimum: 0
+      description: Number of idle connections in the pool
+      example: 7
+    stale_connections:
+      type: integer
+      minimum: 0
+      description: Number of stale connections removed from the pool
+      example: 2
