@@ -47,6 +47,8 @@ svc-web-analyzer/
 │   │   ├── errors.go             # Domain-specific error types
 │   │   └── types.go              # Common domain types
 │   ├── handlers/                 # HTTP handlers implementation
+│   ├── infrastructure/           # Infrastructure implementations
+│   │   └── tracing.go            # OpenTelemetry tracing setup
 │   ├── ports/                    # Interface definitions (clean architecture)
 │   │   ├── cache_repository.go   # Cache repository interface
 │   │   ├── health_checker.go     # Health check interface
@@ -97,6 +99,13 @@ svc-web-analyzer/
 - **Authentication**: PASETO tokens with enhanced security validation
 - **API Specification**: OpenAPI 3.0.3 with comprehensive examples
 - **Build System**: Make with modular build configuration
+- **Database**: PostgreSQL with lib/pq driver
+- **Cache**: KeyDB with go-redis client
+- **Logging**: Structured logging with zerolog
+- **Testing**: Testify framework for unit and integration tests
+- **Observability**: OpenTelemetry for distributed tracing and metrics
+- **Secret Management**: HashiCorp Vault integration
+- **Configuration**: Environment-based configuration with envconfig
 
 ### API Design
 - **Specification**: OpenAPI 3.0.3 with detailed schemas and examples
