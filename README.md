@@ -38,7 +38,23 @@ This project implements a **code-first API design** approach with comprehensive 
 ```
 svc-web-analyzer/
 ├── internal/                      # Private application packages
+│   ├── config/                   # Configuration management
+│   │   ├── loader.go             # Configuration loader with Vault integration
+│   │   ├── loader_test.go        # Configuration tests
+│   │   └── settings.go           # Configuration structures
+│   ├── domain/                   # Domain models and business logic
+│   │   ├── analysis.go           # Web page analysis domain models
+│   │   ├── errors.go             # Domain-specific error types
+│   │   └── types.go              # Common domain types
 │   ├── handlers/                 # HTTP handlers implementation
+│   ├── ports/                    # Interface definitions (clean architecture)
+│   │   ├── cache_repository.go   # Cache repository interface
+│   │   ├── health_checker.go     # Health check interface
+│   │   ├── link_checker.go       # Link validation interface
+│   │   ├── repository.go         # Data repository interface
+│   │   ├── request_handler.go    # Request handling interface
+│   │   ├── secrets_repository.go # Secrets management interface
+│   │   └── web_page_fetcher.go   # Web page fetching interface
 │   └── tools/                    # Code generation tools
 ├── docs/                         # Documentation and specifications
 │   ├── openapi-spec/             # Complete OpenAPI 3.0.3 specification
