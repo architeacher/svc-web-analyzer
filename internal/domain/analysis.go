@@ -22,6 +22,8 @@ const (
 	LinkTypeInternal LinkType = "internal"
 	LinkTypeExternal LinkType = "external"
 
+	InputTypePassword = "password"
+
 	EventTypeStarted   = "analysis_started"
 	EventTypeProgress  = "analysis_progress"
 	EventTypeCompleted = "analysis_completed"

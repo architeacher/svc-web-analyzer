@@ -22,19 +22,55 @@ This is a web page analyzer service with comprehensive OpenAPI specification and
 
 ### Project Structure
 ```
-├── internal/                     # Private application packages
-│   ├── handlers/                 # HTTP handlers
-│   └── tools/                    # Code generation tools
-├── docs/openapi-spec/            # Complete OpenAPI 3.0.3 specification
-│   ├── svc-web-analyzer-api.yaml # Main API specification
-│   ├── schemas/                  # Schema definitions
-│   └── public/                   # Generated API documentation
-├── deployments/docker/           # Docker deployment configuration
-├── build/mk/                     # Make build system
-├── assets/                       # Project assets
-├── scripts/                      # Build and utility scripts
-├── web/                          # Web assets
-└── go.mod                        # Go module definition
+├── internal/                         # Private application packages
+│   ├── adapters/                     # Infrastructure adapters (repositories)
+│   │   ├── cache_repository.go       # Redis cache implementation
+│   │   ├── postgres_repository.go    # PostgreSQL database implementation
+│   │   └── vault_repository.go       # HashiCorp Vault secrets implementation
+│   ├── config/                       # Configuration management
+│   │   ├── loader.go                 # Configuration loader with Vault integration
+│   │   ├── loader_test.go            # Configuration tests
+│   │   └── settings.go               # Configuration structures
+│   ├── domain/                       # Domain models and business logic
+│   │   ├── analysis.go               # Web page analysis domain models
+│   │   ├── errors.go                 # Domain-specific error types
+│   │   └── types.go                  # Common domain types
+│   ├── handlers/                     # HTTP handlers implementation
+│   │   └── http_server_gen.go        # Generated HTTP server code
+│   ├── infrastructure/               # Infrastructure implementations
+│   │   ├── cache.go                  # Cache infrastructure setup
+│   │   ├── logger.go                 # Logging infrastructure
+│   │   ├── metrics.go                # Metrics collection setup
+│   │   ├── queue.go                  # Message queue infrastructure
+│   │   ├── storage.go                # Storage infrastructure
+│   │   └── tracing.go                # OpenTelemetry tracing setup
+│   ├── ports/                        # Interface definitions (clean architecture)
+│   │   ├── cache_repository.go       # Cache repository interface
+│   │   ├── health_checker.go         # Health check interface
+│   │   ├── link_checker.go           # Link validation interface
+│   │   ├── repository.go             # Data repository interface
+│   │   ├── request_handler.go        # Request handling interface
+│   │   ├── secrets_repository.go     # Secrets management interface
+│   │   └── web_page_fetcher.go       # Web page fetching interface
+│   └── tools/                        # Code generation tools
+│       ├── generate.go               # Go generate entry point
+│       ├── go.mod                    # Tools module definition
+│       ├── go.sum                    # Tools module checksums
+│       └── vendor/                   # Vendored code generation dependencies
+├── docs/                             # Documentation and specifications
+│   ├── openapi-spec/                 # Complete OpenAPI 3.0.3 specification
+│   │   ├── svc-web-analyzer-api.yaml # Main API specification
+│   │   ├── schemas/                  # Schema definitions
+│   │   └── public/                   # Generated API documentation
+│   ├── architecture-decisions.md     # Architecture Decision Records
+│   └── features.md                   # Features documentation
+├── deployments/docker/               # Docker deployment configuration
+├── migrations/                       # Database migration files
+├── build/mk/                         # Make build system
+├── assets/                           # Project assets
+├── scripts/                          # Build and utility scripts
+├── vendor/                           # Go module dependencies (vendored)
+└── go.mod                            # Go module definition
 ```
 
 ### API Specification
@@ -54,19 +90,24 @@ The project includes a comprehensive OpenAPI 3.0.3 specification:
 
 The project uses `oapi-codegen` for generating Go code from OpenAPI specifications:
 
-- **Tool**: Uses `oapi-codegen.yaml` configuration
-- **Generated Code**: `internal/httpserver/httpserver_gen.go`
+- **Tool**: Uses `build/oapi/codegen.yaml` configuration
+- **Generated Code**: `internal/handlers/http_server_gen.go`
 - **Build Integration**: Makefile targets for API generation
 - **Docker Integration**: Uses Redocly CLI for bundling specifications
 
 ### Key Features
 
+- **Clean Architecture**: Ports and adapters pattern with clear separation of concerns
+- **Infrastructure Layer**: Complete implementation with cache, database, secrets, logging, metrics, queue, storage, and tracing
+- **Repository Pattern**: Concrete implementations for PostgreSQL, Redis cache, and Vault secrets
 - **Comprehensive Error Handling**: Structured error responses with examples
 - **Real-time Updates**: Server-sent events for analysis progress
 - **Security Headers**: Complete set of security headers implemented
 - **API Versioning**: Multiple versioning strategies supported
 - **Docker Deployment**: Complete containerization setup with Traefik
 - **SSL/TLS**: Local development SSL certificate generation with mkcert
+- **Database Migrations**: Automated database schema management
+- **Configuration Management**: Environment-based configuration with Vault integration
 
 ### Module Information
 

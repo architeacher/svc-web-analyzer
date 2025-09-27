@@ -36,8 +36,11 @@ This project implements a **code-first API design** approach with comprehensive 
 ### Project Structure
 
 ```
-svc-web-analyzer/
 ├── internal/                      # Private application packages
+│   ├── adapters/                 # Infrastructure adapters (repositories)
+│   │   ├── cache_repository.go   # Redis cache implementation
+│   │   ├── postgres_repository.go # PostgreSQL database implementation
+│   │   └── vault_repository.go   # HashiCorp Vault secrets implementation
 │   ├── config/                   # Configuration management
 │   │   ├── loader.go             # Configuration loader with Vault integration
 │   │   ├── loader_test.go        # Configuration tests
@@ -47,7 +50,13 @@ svc-web-analyzer/
 │   │   ├── errors.go             # Domain-specific error types
 │   │   └── types.go              # Common domain types
 │   ├── handlers/                 # HTTP handlers implementation
+│   │   └── http_server_gen.go    # Generated HTTP server code
 │   ├── infrastructure/           # Infrastructure implementations
+│   │   ├── cache.go              # Cache infrastructure setup
+│   │   ├── logger.go             # Logging infrastructure
+│   │   ├── metrics.go            # Metrics collection setup
+│   │   ├── queue.go              # Message queue infrastructure
+│   │   ├── storage.go            # Storage infrastructure
 │   │   └── tracing.go            # OpenTelemetry tracing setup
 │   ├── ports/                    # Interface definitions (clean architecture)
 │   │   ├── cache_repository.go   # Cache repository interface
@@ -58,6 +67,10 @@ svc-web-analyzer/
 │   │   ├── secrets_repository.go # Secrets management interface
 │   │   └── web_page_fetcher.go   # Web page fetching interface
 │   └── tools/                    # Code generation tools
+│       ├── generate.go           # Go generate entry point
+│       ├── go.mod                # Tools module definition
+│       ├── go.sum                # Tools module checksums
+│       └── vendor/               # Vendored code generation dependencies
 ├── docs/                         # Documentation and specifications
 │   ├── openapi-spec/             # Complete OpenAPI 3.0.3 specification
 │   │   ├── svc-web-analyzer-api.yaml # Main API specification
@@ -65,30 +78,13 @@ svc-web-analyzer/
 │   │   └── public/               # Generated API documentation
 │   ├── architecture-decisions.md # Architecture Decision Records
 │   └── features.md               # Features documentation
-├── deployments/                  # Deployment configurations
-│   └── docker/                   # Docker deployment setup
-│       ├── svc-web-analyzer/     # Service container configuration
-│       ├── traefik/              # Reverse proxy configuration
-│       ├── vault/                # HashiCorp Vault configuration
-│       └── Dockerfile            # Main service Dockerfile
+├── deployments/docker/           # Docker deployment configuration
 ├── migrations/                   # Database migration files
-│   ├── 000_create_database.*.sql # Initial database setup
-│   └── 20250927205110_*.sql      # Analysis table migrations
-├── build/                        # Build system and configuration
-│   ├── mk/                       # Make-based build system
-│   │   ├── config/               # Build configuration
-│   │   ├── Makefile              # Main Makefile
-│   │   └── utils.mk              # Utility functions
-│   └── oapi/                     # OpenAPI codegen configuration
+├── build/mk/                     # Make build system
+├── assets/                       # Project assets
 ├── scripts/                      # Build and utility scripts
-│   ├── build.sh                  # Build automation script
-│   ├── common.sh                 # Shared script utilities
-│   └── logger.sh                 # Logging utilities
-├── assets/                       # Project assets and branding
-│   └── logo.txt                  # ASCII logo
-├── compose.yaml                  # Symlink to deployments/docker/compose.yaml
-├── go.mod                        # Go module definition
-└── Makefile                      # Symlink to build/mk/Makefile
+├── vendor/                       # Go module dependencies (vendored)
+└── go.mod                        # Go module definition
 ```
 
 ## Technology Stack
