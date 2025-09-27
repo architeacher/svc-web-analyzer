@@ -37,50 +37,40 @@ This project implements a **code-first API design** approach with comprehensive 
 
 ```
 svc-web-analyzer/
-├── assets/                       # Project assets and branding
-│   └── logo.txt                 # ASCII art logo
-├── build/                        # Build system and configuration
-│   ├── mk/                      # Make-based build system
-│   │   ├── Makefile            # Main Makefile with all targets
-│   │   ├── config/             # Build configuration
-│   │   └── utils.mk            # Build utilities
-│   └── oapi/                    # OpenAPI code generation config
-│       └── codegen.yaml        # oapi-codegen configuration
-├── deployments/                  # Deployment configurations
-│   └── docker/                  # Docker deployment setup
-│       └── traefik/            # Traefik reverse proxy config
-│           ├── dynamic.yaml    # Dynamic routing configuration
-│           └── static.yaml     # Static Traefik configuration
-├── docs/                         # Project documentation
+├── internal/                      # Private application packages
+│   ├── handlers/                 # HTTP handlers implementation
+│   └── tools/                    # Code generation tools
+├── docs/                         # Documentation and specifications
+│   ├── openapi-spec/             # Complete OpenAPI 3.0.3 specification
+│   │   ├── svc-web-analyzer-api.yaml # Main API specification
+│   │   ├── schemas/              # Schema definitions and examples
+│   │   └── public/               # Generated API documentation
 │   ├── architecture-decisions.md # Architecture Decision Records
-│   ├── features.md              # Feature documentation
-│   └── openapi-spec/            # Complete OpenAPI 3.0.3 specification
-│       ├── svc-web-analyzer-api.yaml # Main API specification
-│       ├── schemas/             # Schema definitions
-│       │   ├── analysis-*.yaml  # Analysis-related schemas
-│       │   ├── health-*.yaml    # Health check schemas
-│       │   ├── common/          # Shared schemas
-│       │   ├── errors/          # Error response schemas
-│       │   └── examples/        # Request/response examples
-│       └── public/              # Generated API documentation
-│           └── svc-web-analyzer-swagger-v1.json
-├── internal/                     # Private application packages
-│   ├── handlers/                # HTTP request handlers
-│   │   └── http_server_gen.go  # Generated HTTP server code
-│   └── tools/                   # Code generation tools
-│       ├── generate.go         # Go generate directives
-│       ├── go.mod             # Tools module definition
-│       └── go.sum             # Tools dependencies
+│   └── features.md               # Features documentation
+├── deployments/                  # Deployment configurations
+│   └── docker/                   # Docker deployment setup
+│       ├── svc-web-analyzer/     # Service container configuration
+│       ├── traefik/              # Reverse proxy configuration
+│       ├── vault/                # HashiCorp Vault configuration
+│       └── Dockerfile            # Main service Dockerfile
+├── migrations/                   # Database migration files
+│   ├── 000_create_database.*.sql # Initial database setup
+│   └── 20250927205110_*.sql      # Analysis table migrations
+├── build/                        # Build system and configuration
+│   ├── mk/                       # Make-based build system
+│   │   ├── config/               # Build configuration
+│   │   ├── Makefile              # Main Makefile
+│   │   └── utils.mk              # Utility functions
+│   └── oapi/                     # OpenAPI codegen configuration
 ├── scripts/                      # Build and utility scripts
-│   ├── build.sh               # Build automation script
-│   ├── common.sh              # Common shell functions
-│   └── logger.sh              # Logging utilities
-├── web/                          # Frontend web application
+│   ├── build.sh                  # Build automation script
+│   ├── common.sh                 # Shared script utilities
+│   └── logger.sh                 # Logging utilities
+├── assets/                       # Project assets and branding
+│   └── logo.txt                  # ASCII logo
 ├── compose.yaml                  # Symlink to deployments/docker/compose.yaml
 ├── go.mod                        # Go module definition
-├── go.sum                        # Go module dependencies
-├── Makefile                      # Symlink to build/mk/Makefile
-└── oapi-codegen.yaml            # OpenAPI code generation config
+└── Makefile                      # Symlink to build/mk/Makefile
 ```
 
 ## Technology Stack
@@ -155,6 +145,9 @@ make certify
 # Generate API code from OpenAPI specification
 make generate-api
 
+# Create new database migration
+make create-migration migration_name=<name>
+
 # Run all tests
 make test
 
@@ -166,6 +159,12 @@ make help
 
 # List all targets
 make list
+
+# Default target
+make default
+
+# Study mode (certification preparation)
+make study
 ```
 
 ## API Documentation

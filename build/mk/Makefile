@@ -85,6 +85,11 @@ generate-api:
 	docker run --rm -v $(PWD):/spec redocly/cli:2.2.0 bundle ./docs/openapi-spec/svc-web-analyzer-api.yaml -d --output ./docs/openapi-spec/public/svc-web-analyzer-swagger-v1.json --ext json --config .redocly.yaml && \
 	cd internal/tools && go generate ./...
 
+.PHONY: create-migration
+create-migration: ## 🗂️ Creates migration files based on a passed argument "migration_name".
+	$(call printMessage,"🗃️  Creating migration",$(INFO_CLR))
+	docker compose run --name migrate-this --rm -it migrate create -ext sql -dir migrations "${migration_name}"
+
 .PHONY: test
 test: ## 🏃Run tests with race flag 🏁
 	$(call printMessage,"🕸️  Running tests",$(INFO_CLR))
