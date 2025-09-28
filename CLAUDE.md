@@ -62,6 +62,13 @@ This is a web page analyzer service with comprehensive OpenAPI specification and
 │   │   ├── request_handler.go        # Request handling interface
 │   │   ├── secrets_repository.go     # Secrets management interface
 │   │   └── web_page_fetcher.go       # Web page fetching interface
+│   ├── shared/                       # Shared cross-cutting concerns
+│   │   └── decorator/                # Decorator pattern implementations
+│   │       ├── command.go            # Command decorator for CQRS commands
+│   │       ├── logging.go            # Logging decorator for cross-cutting logging
+│   │       ├── metrics.go            # Metrics decorator for instrumentation
+│   │       ├── query.go              # Query decorator for CQRS queries
+│   │       └── tracing.go            # Tracing decorator for observability
 │   └── tools/                        # Code generation tools
 │       ├── generate.go               # Go generate entry point
 │       ├── go.mod                    # Tools module definition
@@ -124,6 +131,7 @@ The project uses `oapi-codegen` for generating Go code from OpenAPI specificatio
 - **Service Layer**: Application services implementing business logic and orchestration
 - **Infrastructure Layer**: Complete implementation with cache, database, secrets, logging, metrics, queue, storage, and tracing
 - **Repository Pattern**: Concrete implementations for PostgreSQL, Redis cache, and Vault secrets
+- **Decorator Pattern**: Cross-cutting concerns implemented using decorators for logging, metrics, tracing, and CQRS commands/queries
 - **Comprehensive Testing**: Unit tests for all adapters and services with parallel execution
 - **HTML Analysis**: Complete HTML parsing and analysis with link checking
 - **Web Fetching**: Robust web page fetching with configurable timeouts and headers

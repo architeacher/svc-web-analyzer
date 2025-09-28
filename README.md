@@ -85,6 +85,13 @@ The project also follows a **code-first API design** approach with comprehensive
 │   │   ├── request_handler.go        # Request handling interface
 │   │   ├── secrets_repository.go     # Secrets management interface
 │   │   └── web_page_fetcher.go       # Web page fetching interface
+│   ├── shared/                       # Shared cross-cutting concerns
+│   │   └── decorator/                # Decorator pattern implementations
+│   │       ├── command.go            # Command decorator for CQRS commands
+│   │       ├── logging.go            # Logging decorator for cross-cutting logging
+│   │       ├── metrics.go            # Metrics decorator for instrumentation
+│   │       ├── query.go              # Query decorator for CQRS queries
+│   │       └── tracing.go            # Tracing decorator for observability
 │   └── tools/                        # Code generation tools
 │       ├── generate.go               # Go generate entry point
 │       ├── go.mod                    # Tools module definition

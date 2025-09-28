@@ -120,8 +120,6 @@ services:
       - internal
     ports:
       - "${VAULT_PORT:-8200}:8200"
-    environment:
-      - VAULT_UI=true
     env_file:
       - .envrc
     labels:
