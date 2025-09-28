@@ -59,18 +59,26 @@ func (r CacheRepository) Set(ctx context.Context, analysis *domain.Analysis) err
 	data, err := json.Marshal(analysis)
 	if err != nil {
 		r.logger.Error().
+			Err(err).
 			Str("analysis_id", analysis.ID.String()).
 			Str("error", err.Error()).
-			Msg("Failed to marshal analysis for caching")
+			Msg("failed to marshal analysis for caching")
+
 		return err
 	}
 
 	if err := r.client.Set(ctx, key, data, r.config.DefaultExpiry); err != nil {
-		r.logger.Error().Err(err).Str("analysis_id", analysis.ID.String()).Str("url", analysis.URL).Msg("Failed to save analysis to cache")
-		return err
+		r.logger.Error().
+			Err(err).
+			Str("analysis_id", analysis.ID.String()).
+			Str("url", analysis.URL).
+			Msg("failed to save analysis to cache")
+
+		return fmt.Errorf("failed to save analysis to cache: %w", err)
 	}
 
 	r.logger.Debug().Str("analysis_id", analysis.ID.String()).Str("url", analysis.URL).Msg("analysis saved to cache")
+
 	return nil
 }
 

@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"fmt"
+	"time"
 
+	"github.com/architeacher/svc-web-analyzer/internal/config"
 	"github.com/architeacher/svc-web-analyzer/internal/domain"
 	"github.com/architeacher/svc-web-analyzer/internal/infrastructure"
 	"github.com/architeacher/svc-web-analyzer/internal/ports"
@@ -23,6 +25,7 @@ type (
 		analysisRepo  ports.AnalysisRepository
 		cacheRepo     ports.CacheRepository
 		healthChecker ports.HealthChecker
+		sseConfig     config.SSEConfig
 		logger        *infrastructure.Logger
 	}
 )
@@ -31,12 +34,14 @@ func NewApplicationService(
 	analysisRepo ports.AnalysisRepository,
 	cacheRepo ports.CacheRepository,
 	healthChecker ports.HealthChecker,
+	sseConfig config.SSEConfig,
 	logger *infrastructure.Logger,
 ) ApplicationService {
 	return analysisService{
 		analysisRepo:  analysisRepo,
 		cacheRepo:     cacheRepo,
 		healthChecker: healthChecker,
+		sseConfig:     sseConfig,
 		logger:        logger,
 	}
 }
@@ -74,49 +79,72 @@ func (s analysisService) FetchAnalysis(ctx context.Context, analysisID string) (
 }
 
 func (s analysisService) FetchAnalysisEvents(ctx context.Context, analysisID string) (<-chan domain.AnalysisEvent, error) {
-	// Create a channel for events
-	events := make(chan domain.AnalysisEvent)
+	events := make(chan domain.AnalysisEvent, 10)
 
-	// Start a goroutine to send events
 	go func() {
 		defer close(events)
 
-		// Check if analysis exists
+		// Check the analysis status immediately
 		analysis, err := s.FetchAnalysis(ctx, analysisID)
 		if err != nil {
 			return
 		}
 
-		// Send appropriate event based on analysis status
-		switch analysis.Status {
-		case domain.StatusRequested:
-			events <- domain.AnalysisEvent{
-				Type:    domain.EventTypeStarted,
-				Data:    analysis,
-				EventID: analysis.ID.String(),
-			}
-		case domain.StatusInProgress:
-			events <- domain.AnalysisEvent{
-				Type:    domain.EventTypeProgress,
-				Data:    analysis,
-				EventID: analysis.ID.String(),
-			}
-		case domain.StatusCompleted:
-			events <- domain.AnalysisEvent{
-				Type:    domain.EventTypeCompleted,
-				Data:    analysis,
-				EventID: analysis.ID.String(),
-			}
-		case domain.StatusFailed:
-			events <- domain.AnalysisEvent{
-				Type:    domain.EventTypeFailed,
-				Data:    analysis,
-				EventID: analysis.ID.String(),
+		if !s.sendAnalysisEvent(analysis, events) {
+			return
+		}
+
+		keepAliveTicker := time.NewTicker(s.sseConfig.EventsInterval)
+		defer keepAliveTicker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				s.logger.Debug().Str("analysis_id", analysisID).Msg("SSE connection closed by client")
+
+				return
+			case <-keepAliveTicker.C:
+				analysis, err := s.FetchAnalysis(ctx, analysisID)
+				if err != nil {
+					return
+				}
+
+				if !s.sendAnalysisEvent(analysis, events) {
+					return
+				}
 			}
 		}
 	}()
 
 	return events, nil
+}
+
+func (s analysisService) sendAnalysisEvent(analysis *domain.Analysis, events chan<- domain.AnalysisEvent) bool {
+	analysisStatusEventsMap := map[domain.AnalysisStatus]domain.Event{
+		domain.StatusRequested:  domain.EventTypeStarted,
+		domain.StatusInProgress: domain.EventTypeProgress,
+		domain.StatusCompleted:  domain.EventTypeCompleted,
+		domain.StatusFailed:     domain.EventTypeFailed,
+	}
+	keepWaiting := true
+
+	switch analysis.Status {
+	case domain.StatusCompleted, domain.StatusFailed:
+		keepWaiting = false
+	}
+
+	eventType, ok := analysisStatusEventsMap[analysis.Status]
+	if !ok {
+		keepWaiting = false
+	}
+
+	events <- domain.AnalysisEvent{
+		Type:    eventType,
+		Data:    analysis,
+		EventID: analysis.ID.String(),
+	}
+
+	return keepWaiting
 }
 
 func (s analysisService) FetchReadinessReport(ctx context.Context) (*domain.ReadinessResult, error) {

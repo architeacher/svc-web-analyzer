@@ -12,8 +12,6 @@ CREATE TABLE analysis (
     content_hash VARCHAR(64), -- SHA-256 hash of page content for deduplication
     content_size BIGINT,
     status analysis_status NOT NULL DEFAULT 'requested',
-    priority analysis_priority NOT NULL DEFAULT 'normal',
-    retry_count INTEGER NOT NULL DEFAULT 0,
     duration BIGINT, -- Duration in milliseconds
     version INTEGER NOT NULL DEFAULT 1,
     lock_version INTEGER NOT NULL DEFAULT 1,
@@ -56,11 +54,6 @@ CREATE INDEX idx_analysis_content_hash ON analysis(content_hash) WHERE content_h
 -- Index for normalized URL lookups
 CREATE INDEX idx_analysis_url_normalized ON analysis(url_normalized);
 
--- Index for retry logic
-CREATE INDEX idx_analysis_retry_status ON analysis(retry_count, status) WHERE retry_count > 0;
-
--- Index for priority-based queue management
-CREATE INDEX idx_analysis_priority_status ON analysis(priority, status, created_at) WHERE status IN ('requested', 'in_progress');
 
 -- JSON indexes for common queries on results and options
 CREATE INDEX idx_analysis_results_gin ON analysis USING GIN(results);
@@ -115,10 +108,8 @@ CREATE TRIGGER set_analysis_version
 COMMENT ON TABLE analysis IS 'Web page analysis results storage with versioning support';
 COMMENT ON COLUMN analysis.url IS 'The URL being analyzed';
 COMMENT ON COLUMN analysis.url_normalized IS 'Normalized URL for efficient lookups and deduplication';
-COMMENT ON COLUMN analysis.priority IS 'Priority level for analysis queue management (low, normal, high, urgent)';
 COMMENT ON COLUMN analysis.content_hash IS 'SHA-256 hash of page content for deduplication';
 COMMENT ON COLUMN analysis.content_size IS 'Size of analyzed content in bytes';
-COMMENT ON COLUMN analysis.retry_count IS 'Number of retry attempts for failed analyses';
 COMMENT ON COLUMN analysis.duration IS 'Analysis duration in milliseconds';
 COMMENT ON COLUMN analysis.version IS 'Version number for the same URL (auto-incremented)';
 COMMENT ON COLUMN analysis.lock_version IS 'Version for optimistic concurrency control';
@@ -130,7 +121,6 @@ COMMENT ON COLUMN analysis.expires_at IS 'Timestamp when record should be automa
 COMMENT ON CONSTRAINT uk_analysis_url_version ON analysis IS 'Ensures unique URL + version combinations';
 COMMENT ON INDEX idx_analysis_url_normalized IS 'Index for fast normalized URL lookups';
 COMMENT ON INDEX idx_analysis_content_hash IS 'Index for content hash-based deduplication queries';
-COMMENT ON INDEX idx_analysis_retry_status IS 'Index for retry logic queries';
 COMMENT ON INDEX idx_analysis_url_norm_version_desc IS 'Index for finding latest version of a normalized URL efficiently';
 COMMENT ON INDEX idx_analysis_options_gin IS 'GIN index for efficient JSON queries on options column';
 COMMENT ON INDEX idx_analysis_results_gin IS 'GIN index for efficient JSON queries on results column';

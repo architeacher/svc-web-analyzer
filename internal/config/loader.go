@@ -28,6 +28,10 @@ func Init() (*ServiceConfig, error) {
 		cfg.AppConfig.CommitSHA = CommitSHA
 	}
 
+	if len(APIVersion) != 0 {
+		cfg.AppConfig.APIVersion = APIVersion
+	}
+
 	return cfg, nil
 }
 
@@ -144,7 +148,7 @@ func applySecretsToConfig(cfg *ServiceConfig, data map[string]interface{}) error
 }
 
 func applySecretToConfig(cfg *ServiceConfig, key, value string) error {
-	// Set environment variable and update config based on key
+	// Middleware environment variable and update config based on key
 	if err := os.Setenv(key, value); err != nil {
 		return fmt.Errorf("failed to set environment variable %s: %w", key, err)
 	}

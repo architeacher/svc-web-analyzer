@@ -605,7 +605,7 @@ func (suite *LinkCheckerTestSuite) TestCheckAccessibility_CircuitBreaker() {
 	suite.config.CircuitBreaker.MaxRequests = 1
 	suite.config.CircuitBreaker.Interval = 100 * time.Millisecond
 	suite.config.CircuitBreaker.Timeout = 200 * time.Millisecond
-	// Set a very short timeout to trigger network errors
+	// Middleware a very short timeout to trigger network errors
 	suite.config.Timeout = 50 * time.Millisecond
 	// Recreate linkChecker with updated config
 	suite.linkChecker = NewLinkChecker(suite.config, suite.logger)
@@ -645,7 +645,7 @@ func (suite *LinkCheckerTestSuite) TestCheckAccessibility_CircuitBreaker() {
 		assert.Equal(suite.t, 0, inaccessibleLinks[0].StatusCode)
 		assert.NotEmpty(suite.t, inaccessibleLinks[0].Error)
 
-		// Add small delay between requests
+		// Add a small delay between requests
 		time.Sleep(50 * time.Millisecond)
 	}
 
@@ -960,7 +960,7 @@ func (suite *LinkCheckerTestSuite) TestCheckAccessibility_ConcurrentExecution() 
 			defer subSuite.TearDownTest()
 
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Add small delay to simulate real network conditions
+				// Add a small delay to simulate real network conditions
 				time.Sleep(10 * time.Millisecond)
 				w.WriteHeader(http.StatusOK)
 				w.Write([]byte(fmt.Sprintf("Response from goroutine %d", id)))

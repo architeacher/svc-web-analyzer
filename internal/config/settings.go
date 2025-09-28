@@ -8,13 +8,14 @@ import (
 var (
 	ServiceVersion string
 	CommitSHA      string
+	APIVersion     string
 )
 
 const (
 	Development = 1 << iota
 	Sandbox
 	Staging
-	Production  
+	Production
 )
 
 type (
@@ -24,6 +25,7 @@ type (
 		Telemetry             Telemetry
 		SecretStorage         SecretStorageConfig
 		HTTPServer            HTTPServerConfig
+		SSE                   SSEConfig
 		Cache                 CacheConfig
 		Storage               StorageConfig
 		Queue                 QueueConfig
@@ -37,6 +39,7 @@ type (
 		ServiceName    string `envconfig:"APP_SERVICE_NAME" default:"svc-web-analyzer"`
 		ServiceVersion string `envconfig:"APP_SERVICE_VERSION" default:"0.0.0"`
 		CommitSHA      string `envconfig:"APP_COMMIT_SHA" default:"unknown"`
+		APIVersion     string `envconfig:"APP_API_VERSION" default:"v1"`
 		Env            string `envconfig:"APP_ENVIRONMENT" default:"unknown"`
 	}
 
@@ -86,6 +89,10 @@ type (
 		WriteTimeout    time.Duration `envconfig:"HTTP_SERVER_WRITE_TIMEOUT" default:"30s"`
 		IdleTimeout     time.Duration `envconfig:"HTTP_SERVER_IDLE_TIMEOUT" default:"120s"`
 		ShutdownTimeout time.Duration `envconfig:"HTTP_SERVER_SHUTDOWN_TIMEOUT" default:"10s"`
+	}
+
+	SSEConfig struct {
+		EventsInterval time.Duration `envconfig:"SSE_EVENTS_INTERVAL" default:"500ms"`
 	}
 
 	StorageConfig struct {

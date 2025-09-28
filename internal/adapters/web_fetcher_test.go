@@ -215,17 +215,17 @@ func (suite *WebFetcherTestSuite) createSimpleServer(options ...ServerOption) *h
 			time.Sleep(config.Delay)
 		}
 
-		// Set content type
+		// Middleware content type
 		if config.ContentType != "" {
 			w.Header().Set("Content-Type", config.ContentType)
 		}
 
-		// Set custom headers
+		// Middleware custom headers
 		for key, value := range config.Headers {
 			w.Header().Set(key, value)
 		}
 
-		// Set status code
+		// Middleware status code
 		w.WriteHeader(config.StatusCode)
 
 		// Write response body
@@ -386,7 +386,7 @@ func (suite *WebFetcherTestSuite) TestFetch_ErrorCases() {
 				return subSuite.createSimpleServer(
 					WithStatusCode(http.StatusOK),
 					WithContentType("text/html"),
-					WithResponseSize(11 * 1024 * 1024), // Write more than 10MB
+					WithResponseSize(11*1024*1024), // Write more than 10MB
 				)
 			},
 			expectedErrMsg: "Response size .* bytes exceeds maximum allowed",
@@ -400,7 +400,7 @@ func (suite *WebFetcherTestSuite) TestFetch_ErrorCases() {
 					WithStatusCode(http.StatusOK),
 					WithContentType("text/html"),
 					WithResponseBody("OK"),
-					WithDelay(2 * time.Second),
+					WithDelay(2*time.Second),
 				)
 			},
 			timeout:        100 * time.Millisecond,
@@ -1016,7 +1016,7 @@ func (suite *WebFetcherTestSuite) TestFetch_EdgeCases() {
 				return subSuite.createSimpleServer(
 					WithStatusCode(http.StatusOK),
 					WithContentType("text/html"),
-					WithResponseSize(10 * 1024 * 1024), // Exactly 10MB
+					WithResponseSize(10*1024*1024), // Exactly 10MB
 				)
 			},
 			expectedErr: false,
@@ -1075,7 +1075,7 @@ func (suite *WebFetcherTestSuite) TestFetch_ConcurrentRequests() {
 		WithStatusCode(http.StatusOK),
 		WithContentType("text/html"),
 		WithResponseBody(fmt.Sprintf("<html><body>Response at %s</body></html>", time.Now().Format(time.RFC3339Nano))),
-		WithDelay(10 * time.Millisecond), // Add small delay to simulate real network latency
+		WithDelay(10*time.Millisecond), // Add a small delay to simulate real network latency
 	)
 	defer server.Close()
 

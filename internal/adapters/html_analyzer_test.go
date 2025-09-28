@@ -36,9 +36,7 @@ func (suite *HTMLAnalyzerTestSuite) SetupTest() {
 	suite.analyzer = NewHTMLAnalyzer(suite.logger)
 }
 
-// TearDownTest cleans up resources after each test
 func (suite *HTMLAnalyzerTestSuite) TearDownTest() {
-	// No cleanup needed for HTML analyzer
 }
 
 // TestNewHTMLAnalyzer tests the constructor

@@ -77,13 +77,18 @@ func (m *MockHealthChecker) CheckHealth(ctx context.Context) *domain.HealthResul
 	return args.Get(0).(*domain.HealthResult)
 }
 
-// Helper function to create test logger
 func createTestLogger() *infrastructure.Logger {
 	logConfig := config.LoggingConfig{
 		Level:  "error", // Use error level to reduce test output
 		Format: "json",
 	}
 	return infrastructure.New(logConfig)
+}
+
+func createTestSSEConfig() config.SSEConfig {
+	return config.SSEConfig{
+		EventsInterval: 100 * time.Millisecond, // Faster for tests
+	}
 }
 
 // Test FetchAnalysis with cache hit
@@ -111,7 +116,8 @@ func TestFetchAnalysis_CacheHit(t *testing.T) {
 	mockCacheRepo.On("Find", ctx, analysisID).Return(expectedAnalysis, nil)
 
 	mockHealthChecker := &MockHealthChecker{}
-	service := NewApplicationService(mockAnalysisRepo, mockCacheRepo, mockHealthChecker, logger)
+	sseConfig := createTestSSEConfig()
+	service := NewApplicationService(mockAnalysisRepo, mockCacheRepo, mockHealthChecker, sseConfig, logger)
 
 	// Act
 	result, err := service.FetchAnalysis(ctx, analysisID)
@@ -157,7 +163,8 @@ func TestFetchAnalysis_CacheMiss(t *testing.T) {
 	mockCacheRepo.On("Set", ctx, expectedAnalysis).Return(nil)
 
 	mockHealthChecker := &MockHealthChecker{}
-	service := NewApplicationService(mockAnalysisRepo, mockCacheRepo, mockHealthChecker, logger)
+	sseConfig := createTestSSEConfig()
+	service := NewApplicationService(mockAnalysisRepo, mockCacheRepo, mockHealthChecker, sseConfig, logger)
 
 	// Act
 	result, err := service.FetchAnalysis(ctx, analysisID)
@@ -191,7 +198,8 @@ func TestFetchAnalysis_BothFail(t *testing.T) {
 	mockAnalysisRepo.On("Find", ctx, analysisID).Return(nil, domain.ErrAnalysisNotFound)
 
 	mockHealthChecker := &MockHealthChecker{}
-	service := NewApplicationService(mockAnalysisRepo, mockCacheRepo, mockHealthChecker, logger)
+	sseConfig := createTestSSEConfig()
+	service := NewApplicationService(mockAnalysisRepo, mockCacheRepo, mockHealthChecker, sseConfig, logger)
 
 	// Act
 	result, err := service.FetchAnalysis(ctx, analysisID)
@@ -237,7 +245,8 @@ func TestStartAnalysis_Success(t *testing.T) {
 	mockCacheRepo.On("Set", ctx, expectedAnalysis).Return(nil)
 
 	mockHealthChecker := &MockHealthChecker{}
-	service := NewApplicationService(mockAnalysisRepo, mockCacheRepo, mockHealthChecker, logger)
+	sseConfig := createTestSSEConfig()
+	service := NewApplicationService(mockAnalysisRepo, mockCacheRepo, mockHealthChecker, sseConfig, logger)
 
 	// Act
 	result, err := service.StartAnalysis(ctx, url, options)
@@ -275,7 +284,8 @@ func TestStartAnalysis_DBFails(t *testing.T) {
 	mockAnalysisRepo.On("Save", ctx, url, options).Return(nil, domain.ErrInternalServerError)
 
 	mockHealthChecker := &MockHealthChecker{}
-	service := NewApplicationService(mockAnalysisRepo, mockCacheRepo, mockHealthChecker, logger)
+	sseConfig := createTestSSEConfig()
+	service := NewApplicationService(mockAnalysisRepo, mockCacheRepo, mockHealthChecker, sseConfig, logger)
 
 	// Act
 	result, err := service.StartAnalysis(ctx, url, options)
@@ -321,7 +331,8 @@ func TestStartAnalysis_CacheFailsDBSucceeds(t *testing.T) {
 	mockCacheRepo.On("Set", ctx, expectedAnalysis).Return(domain.ErrCacheUnavailable)
 
 	mockHealthChecker := &MockHealthChecker{}
-	service := NewApplicationService(mockAnalysisRepo, mockCacheRepo, mockHealthChecker, logger)
+	sseConfig := createTestSSEConfig()
+	service := NewApplicationService(mockAnalysisRepo, mockCacheRepo, mockHealthChecker, sseConfig, logger)
 
 	// Act
 	result, err := service.StartAnalysis(ctx, url, options)
@@ -361,7 +372,8 @@ func TestFetchAnalysisEvents_CompletedAnalysis(t *testing.T) {
 	mockCacheRepo.On("Find", ctx, analysisID).Return(expectedAnalysis, nil)
 
 	mockHealthChecker := &MockHealthChecker{}
-	service := NewApplicationService(mockAnalysisRepo, mockCacheRepo, mockHealthChecker, logger)
+	sseConfig := createTestSSEConfig()
+	service := NewApplicationService(mockAnalysisRepo, mockCacheRepo, mockHealthChecker, sseConfig, logger)
 
 	// Act
 	eventsChan, err := service.FetchAnalysisEvents(ctx, analysisID)
@@ -417,7 +429,8 @@ func TestFetchAnalysisEvents_FailedAnalysis(t *testing.T) {
 	mockCacheRepo.On("Find", ctx, analysisID).Return(expectedAnalysis, nil)
 
 	mockHealthChecker := &MockHealthChecker{}
-	service := NewApplicationService(mockAnalysisRepo, mockCacheRepo, mockHealthChecker, logger)
+	sseConfig := createTestSSEConfig()
+	service := NewApplicationService(mockAnalysisRepo, mockCacheRepo, mockHealthChecker, sseConfig, logger)
 
 	// Act
 	eventsChan, err := service.FetchAnalysisEvents(ctx, analysisID)

@@ -24,10 +24,10 @@ const (
 
 	InputTypePassword = "password"
 
-	EventTypeStarted   = "analysis_started"
-	EventTypeProgress  = "analysis_progress"
-	EventTypeCompleted = "analysis_completed"
-	EventTypeFailed    = "analysis_failed"
+	EventTypeStarted   Event = "analysis_started"
+	EventTypeProgress  Event = "analysis_progress"
+	EventTypeCompleted Event = "analysis_completed"
+	EventTypeFailed    Event = "analysis_failed"
 )
 
 type (
@@ -35,6 +35,7 @@ type (
 	HTMLVersion    string
 	LinkType       string
 	FormMethod     string
+	Event          string
 
 	Analysis struct {
 		ID          uuid.UUID      `json:"analysis_id"`
@@ -129,7 +130,7 @@ type (
 	}
 
 	AnalysisEvent struct {
-		Type    string      `json:"type"`
+		Type    Event       `json:"type"`
 		Data    interface{} `json:"data"`
 		EventID string      `json:"event_id"`
 	}

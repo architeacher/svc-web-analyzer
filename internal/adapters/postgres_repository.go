@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/architeacher/svc-web-analyzer/internal/domain"
@@ -22,6 +24,41 @@ func NewPostgresRepository(storageClient *infrastructure.Storage) PostgresReposi
 	return PostgresRepository{
 		storageClient: storageClient,
 	}
+}
+
+func normalizeURL(rawURL string) (string, error) {
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse URL: %w", err)
+	}
+
+	// Ensure scheme is present
+	if parsedURL.Scheme == "" {
+		parsedURL.Scheme = "https"
+	}
+
+	// Convert scheme and host to lowercase
+	parsedURL.Scheme = strings.ToLower(parsedURL.Scheme)
+	parsedURL.Host = strings.ToLower(parsedURL.Host)
+
+	// Remove default ports
+	if (parsedURL.Scheme == "http" && strings.HasSuffix(parsedURL.Host, ":80")) ||
+		(parsedURL.Scheme == "https" && strings.HasSuffix(parsedURL.Host, ":443")) {
+		parsedURL.Host = parsedURL.Host[:strings.LastIndex(parsedURL.Host, ":")]
+	}
+
+	// Remove trailing slash if path is just "/"
+	if parsedURL.Path == "/" {
+		parsedURL.Path = ""
+	}
+
+	// Preserve query parameters as they affect content
+	// Query parameters are kept as-is since they determine what content is served
+
+	// Remove fragment since it's client-side only and doesn't affect server content
+	parsedURL.Fragment = ""
+
+	return parsedURL.String(), nil
 }
 
 func (r PostgresRepository) Find(ctx context.Context, analysisID string) (*domain.Analysis, error) {
@@ -107,6 +144,12 @@ func (r PostgresRepository) Save(ctx context.Context, url string, options domain
 		return nil, fmt.Errorf("failed to get database connection: %w", err)
 	}
 
+	// Normalize the URL
+	normalizedURL, err := normalizeURL(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to normalize URL: %w", err)
+	}
+
 	// Create new analysis from parameters
 	analysis := &domain.Analysis{
 		ID:        uuid.New(),
@@ -117,9 +160,9 @@ func (r PostgresRepository) Save(ctx context.Context, url string, options domain
 
 	query := `
 		INSERT INTO analysis (
-			id, url, status, created_at
+			id, url, url_normalized, status, created_at
 		) VALUES (
-			$1, $2, $3, $4
+			$1, $2, $3, $4, $5
 		)
 		RETURNING id, created_at
 	`
@@ -127,6 +170,7 @@ func (r PostgresRepository) Save(ctx context.Context, url string, options domain
 	err = db.QueryRowContext(ctx, query,
 		analysis.ID,
 		analysis.URL,
+		normalizedURL,
 		analysis.Status,
 		analysis.CreatedAt,
 	).Scan(&analysis.ID, &analysis.CreatedAt)
