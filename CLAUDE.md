@@ -25,8 +25,15 @@ This is a web page analyzer service with comprehensive OpenAPI specification and
 ├── internal/                         # Private application packages
 │   ├── adapters/                     # Infrastructure adapters (repositories)
 │   │   ├── cache_repository.go       # Redis cache implementation
+│   │   ├── health_checker.go         # Health check adapter
+│   │   ├── html_analyzer.go          # HTML analysis implementation
+│   │   ├── html_analyzer_test.go     # HTML analyzer tests
+│   │   ├── link_checker.go           # Link validation implementation
+│   │   ├── link_checker_test.go      # Link checker tests
 │   │   ├── postgres_repository.go    # PostgreSQL database implementation
-│   │   └── vault_repository.go       # HashiCorp Vault secrets implementation
+│   │   ├── vault_repository.go       # HashiCorp Vault secrets implementation
+│   │   ├── web_fetcher.go            # Web page fetching implementation
+│   │   └── web_fetcher_test.go       # Web fetcher tests
 │   ├── config/                       # Configuration management
 │   │   ├── loader.go                 # Configuration loader with Vault integration
 │   │   ├── loader_test.go            # Configuration tests
@@ -37,6 +44,9 @@ This is a web page analyzer service with comprehensive OpenAPI specification and
 │   │   └── types.go                  # Common domain types
 │   ├── handlers/                     # HTTP handlers implementation
 │   │   └── http_server_gen.go        # Generated HTTP server code
+│   ├── service/                      # Application service layer
+│   │   ├── application_service.go    # Business logic and orchestration
+│   │   └── application_service_test.go # Comprehensive service tests
 │   ├── infrastructure/               # Infrastructure implementations
 │   │   ├── cache.go                  # Cache infrastructure setup
 │   │   ├── logger.go                 # Logging infrastructure
@@ -55,21 +65,34 @@ This is a web page analyzer service with comprehensive OpenAPI specification and
 │   └── tools/                        # Code generation tools
 │       ├── generate.go               # Go generate entry point
 │       ├── go.mod                    # Tools module definition
-│       ├── go.sum                    # Tools module checksums
-│       └── vendor/                   # Vendored code generation dependencies
+│       └── go.sum                    # Tools module checksums
 ├── docs/                             # Documentation and specifications
 │   ├── openapi-spec/                 # Complete OpenAPI 3.0.3 specification
 │   │   ├── svc-web-analyzer-api.yaml # Main API specification
 │   │   ├── schemas/                  # Schema definitions
+│   │   │   ├── common/               # Common schema components
+│   │   │   ├── errors/               # Error response schemas
+│   │   │   └── examples/             # Request/response examples
 │   │   └── public/                   # Generated API documentation
 │   ├── architecture-decisions.md     # Architecture Decision Records
 │   └── features.md                   # Features documentation
 ├── deployments/docker/               # Docker deployment configuration
+│   ├── Dockerfile                    # Main application Dockerfile
+│   ├── svc-web-analyzer/             # Service-specific configuration
+│   ├── traefik/                      # Traefik reverse proxy configuration
+│   └── vault/                        # HashiCorp Vault initialization
 ├── migrations/                       # Database migration files
-├── build/mk/                         # Make build system
+├── build/                            # Build system and tools
+│   ├── mk/                           # Make build system
+│   └── oapi/                         # OpenAPI code generation config
 ├── assets/                           # Project assets
 ├── scripts/                          # Build and utility scripts
-├── vendor/                           # Go module dependencies (vendored)
+├── .trees/frontend-feature/          # Frontend branch tree worktree
+│   └── web/                          # Vue.js frontend application
+│       ├── src/                      # Vue.js source code
+│       ├── e2e/                      # End-to-end tests
+│       ├── public/                   # Static assets
+│       └── dist/                     # Built frontend assets
 └── go.mod                            # Go module definition
 ```
 
@@ -98,12 +121,17 @@ The project uses `oapi-codegen` for generating Go code from OpenAPI specificatio
 ### Key Features
 
 - **Clean Architecture**: Ports and adapters pattern with clear separation of concerns
+- **Service Layer**: Application services implementing business logic and orchestration
 - **Infrastructure Layer**: Complete implementation with cache, database, secrets, logging, metrics, queue, storage, and tracing
 - **Repository Pattern**: Concrete implementations for PostgreSQL, Redis cache, and Vault secrets
+- **Comprehensive Testing**: Unit tests for all adapters and services with parallel execution
+- **HTML Analysis**: Complete HTML parsing and analysis with link checking
+- **Web Fetching**: Robust web page fetching with configurable timeouts and headers
 - **Comprehensive Error Handling**: Structured error responses with examples
 - **Real-time Updates**: Server-sent events for analysis progress
 - **Security Headers**: Complete set of security headers implemented
 - **API Versioning**: Multiple versioning strategies supported
+- **Frontend Application**: Modern Vue.js application with TypeScript and Tailwind CSS
 - **Docker Deployment**: Complete containerization setup with Traefik
 - **SSL/TLS**: Local development SSL certificate generation with mkcert
 - **Database Migrations**: Automated database schema management
@@ -120,8 +148,24 @@ The project uses `oapi-codegen` for generating Go code from OpenAPI specificatio
 - **Local Domains**: Uses `*.web-analyzer.dev` with SSL certificates
   - **API**: https://api.web-analyzer.dev/v1/
   - **Documentation**: https://docs.web-analyzer.dev
+  - **Frontend**: https://web-analyzer.dev (Vue.js application)
   - **Traefik Dashboard**: https://traefik.web-analyzer.dev (admin/admin)
 - **Reverse Proxy**: Traefik configuration for local development
 - **API Documentation**: Auto-generated from OpenAPI specification
 - **Container Orchestration**: Docker Compose setup for all services
+- **Frontend**: Vue.js application with TypeScript, Tailwind CSS, and Vite
 - **Setup**: Run `make init start` to initialize and start all services
+
+### Frontend Architecture
+
+The project includes a comprehensive Vue.js frontend application:
+
+- **Framework**: Vue 3 with Composition API and TypeScript
+- **Build Tool**: Vite for fast development and optimized builds
+- **Styling**: Tailwind CSS for utility-first styling
+- **State Management**: Pinia for reactive state management
+- **Testing**: Vitest for unit tests and Playwright for E2E tests
+- **Components**: Modular component architecture with analysis, auth, and layout components
+- **API Integration**: Axios-based API client with type-safe interfaces
+- **Development**: Hot reload, TypeScript checking, and linting
+- **Deployment**: Docker containerization with Nginx

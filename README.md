@@ -31,60 +31,92 @@ For complete feature documentation, see [Features Documentation](docs/features.m
 
 ## Architecture
 
-This project implements a **code-first API design** approach with comprehensive OpenAPI specification and generated server code.
+This project implements a **clean architecture** approach with clear separation of concerns:
+
+### Clean Architecture Layers
+- **Domain Layer**: Core business models and domain logic
+- **Service Layer**: Application services orchestrating business workflows
+- **Ports Layer**: Interface definitions for external dependencies
+- **Adapters Layer**: Infrastructure implementations (database, cache, vault)
+- **Handlers Layer**: HTTP transport layer with generated OpenAPI code
+
+The project also follows a **code-first API design** approach with comprehensive OpenAPI specification and generated server code.
 
 ### Project Structure
 
 ```
-├── internal/                      # Private application packages
-│   ├── adapters/                 # Infrastructure adapters (repositories)
-│   │   ├── cache_repository.go   # Redis cache implementation
-│   │   ├── postgres_repository.go # PostgreSQL database implementation
-│   │   └── vault_repository.go   # HashiCorp Vault secrets implementation
-│   ├── config/                   # Configuration management
-│   │   ├── loader.go             # Configuration loader with Vault integration
-│   │   ├── loader_test.go        # Configuration tests
-│   │   └── settings.go           # Configuration structures
-│   ├── domain/                   # Domain models and business logic
-│   │   ├── analysis.go           # Web page analysis domain models
-│   │   ├── errors.go             # Domain-specific error types
-│   │   └── types.go              # Common domain types
-│   ├── handlers/                 # HTTP handlers implementation
-│   │   └── http_server_gen.go    # Generated HTTP server code
-│   ├── infrastructure/           # Infrastructure implementations
-│   │   ├── cache.go              # Cache infrastructure setup
-│   │   ├── logger.go             # Logging infrastructure
-│   │   ├── metrics.go            # Metrics collection setup
-│   │   ├── queue.go              # Message queue infrastructure
-│   │   ├── storage.go            # Storage infrastructure
-│   │   └── tracing.go            # OpenTelemetry tracing setup
-│   ├── ports/                    # Interface definitions (clean architecture)
-│   │   ├── cache_repository.go   # Cache repository interface
-│   │   ├── health_checker.go     # Health check interface
-│   │   ├── link_checker.go       # Link validation interface
-│   │   ├── repository.go         # Data repository interface
-│   │   ├── request_handler.go    # Request handling interface
-│   │   ├── secrets_repository.go # Secrets management interface
-│   │   └── web_page_fetcher.go   # Web page fetching interface
-│   └── tools/                    # Code generation tools
-│       ├── generate.go           # Go generate entry point
-│       ├── go.mod                # Tools module definition
-│       ├── go.sum                # Tools module checksums
-│       └── vendor/               # Vendored code generation dependencies
-├── docs/                         # Documentation and specifications
-│   ├── openapi-spec/             # Complete OpenAPI 3.0.3 specification
+├── internal/                         # Private application packages
+│   ├── adapters/                     # Infrastructure adapters (repositories)
+│   │   ├── cache_repository.go       # Redis cache implementation
+│   │   ├── health_checker.go         # Health check adapter
+│   │   ├── html_analyzer.go          # HTML analysis implementation
+│   │   ├── html_analyzer_test.go     # HTML analyzer tests
+│   │   ├── link_checker.go           # Link validation implementation
+│   │   ├── link_checker_test.go      # Link checker tests
+│   │   ├── postgres_repository.go    # PostgreSQL database implementation
+│   │   ├── vault_repository.go       # HashiCorp Vault secrets implementation
+│   │   ├── web_fetcher.go            # Web page fetching implementation
+│   │   └── web_fetcher_test.go       # Web fetcher tests
+│   ├── config/                       # Configuration management
+│   │   ├── loader.go                 # Configuration loader with Vault integration
+│   │   ├── loader_test.go            # Configuration tests
+│   │   └── settings.go               # Configuration structures
+│   ├── domain/                       # Domain models and business logic
+│   │   ├── analysis.go               # Web page analysis domain models
+│   │   ├── errors.go                 # Domain-specific error types
+│   │   └── types.go                  # Common domain types
+│   ├── handlers/                     # HTTP handlers implementation
+│   │   └── http_server_gen.go        # Generated HTTP server code
+│   ├── service/                      # Application service layer
+│   │   ├── application_service.go    # Business logic and orchestration
+│   │   └── application_service_test.go # Comprehensive service tests
+│   ├── infrastructure/               # Infrastructure implementations
+│   │   ├── cache.go                  # Cache infrastructure setup
+│   │   ├── logger.go                 # Logging infrastructure
+│   │   ├── metrics.go                # Metrics collection setup
+│   │   ├── queue.go                  # Message queue infrastructure
+│   │   ├── storage.go                # Storage infrastructure
+│   │   └── tracing.go                # OpenTelemetry tracing setup
+│   ├── ports/                        # Interface definitions (clean architecture)
+│   │   ├── cache_repository.go       # Cache repository interface
+│   │   ├── health_checker.go         # Health check interface
+│   │   ├── link_checker.go           # Link validation interface
+│   │   ├── repository.go             # Data repository interface
+│   │   ├── request_handler.go        # Request handling interface
+│   │   ├── secrets_repository.go     # Secrets management interface
+│   │   └── web_page_fetcher.go       # Web page fetching interface
+│   └── tools/                        # Code generation tools
+│       ├── generate.go               # Go generate entry point
+│       ├── go.mod                    # Tools module definition
+│       └── go.sum                    # Tools module checksums
+├── docs/                             # Documentation and specifications
+│   ├── openapi-spec/                 # Complete OpenAPI 3.0.3 specification
 │   │   ├── svc-web-analyzer-api.yaml # Main API specification
-│   │   ├── schemas/              # Schema definitions and examples
-│   │   └── public/               # Generated API documentation
-│   ├── architecture-decisions.md # Architecture Decision Records
-│   └── features.md               # Features documentation
-├── deployments/docker/           # Docker deployment configuration
-├── migrations/                   # Database migration files
-├── build/mk/                     # Make build system
-├── assets/                       # Project assets
-├── scripts/                      # Build and utility scripts
-├── vendor/                       # Go module dependencies (vendored)
-└── go.mod                        # Go module definition
+│   │   ├── schemas/                  # Schema definitions
+│   │   │   ├── common/               # Common schema components
+│   │   │   ├── errors/               # Error response schemas
+│   │   │   └── examples/             # Request/response examples
+│   │   └── public/                   # Generated API documentation
+│   ├── architecture-decisions.md     # Architecture Decision Records
+│   └── features.md                   # Features documentation
+├── deployments/docker/               # Docker deployment configuration
+│   ├── Dockerfile                    # Main application Dockerfile
+│   ├── svc-web-analyzer/             # Service-specific configuration
+│   ├── traefik/                      # Traefik reverse proxy configuration
+│   └── vault/                        # HashiCorp Vault initialization
+├── migrations/                       # Database migration files
+├── build/                            # Build system and tools
+│   ├── mk/                           # Make build system
+│   └── oapi/                         # OpenAPI code generation config
+├── assets/                           # Project assets
+├── scripts/                          # Build and utility scripts
+├── .trees/frontend-feature/          # Frontend branch tree worktree
+│   └── web/                          # Vue.js frontend application
+│       ├── src/                      # Vue.js source code
+│       ├── e2e/                      # End-to-end tests
+│       ├── public/                   # Static assets
+│       └── dist/                     # Built frontend assets
+└── go.mod                            # Go module definition
 ```
 
 ## Technology Stack
@@ -237,10 +269,42 @@ The project uses a code-first approach with OpenAPI specification:
 - **CORS Configuration**: Configurable cross-origin resource sharing
 - **Input Validation**: Schema-based validation from OpenAPI specification
 
+## Testing
+
+The project follows Go testing best practices with comprehensive test coverage:
+
+### Test Structure
+- **Unit Tests**: All service layer logic with mock repositories
+- **Parallel Execution**: Tests run concurrently for faster execution
+- **Mock Interfaces**: Using testify/mock for dependency isolation
+- **Test Coverage**: Comprehensive coverage of success and error scenarios
+
+### Running Tests
+```bash
+# Run all tests
+make test
+
+# Run service layer tests specifically
+go test ./internal/service/ -v
+
+# Run tests with coverage
+go test -cover ./...
+
+# Run tests in parallel (default behavior)
+go test -parallel 8 ./...
+```
+
+### Test Categories
+- **Service Layer**: Business logic testing with mocked dependencies
+- **Configuration**: Environment and Vault configuration testing
+- **Integration**: End-to-end API testing (planned)
+- **Performance**: Load testing for analysis endpoints (planned)
+
 ## Development Tools
 
 - **Make Targets**: Comprehensive build automation
 - **Docker Integration**: Multi-stage builds and development containers
 - **SSL/TLS**: Local development with valid certificates
 - **API Documentation**: Auto-generated from OpenAPI specification
+- **Testing Framework**: Testify for assertions and mocking
 
