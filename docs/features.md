@@ -59,19 +59,72 @@ This document provides comprehensive documentation of all features implemented i
 - **Example Responses**: Complete examples for all endpoints and scenarios.
 - **Content Negotiation**: Support for multiple content types.
 
-## Infrastructure Features
+## Backend Architecture Features
+
+### Event-Driven Architecture
+- **Publisher/Subscriber Pattern**: Decoupled services for scalable message processing
+  - **Publisher Service**: Monitors outbox events and publishes to message queue
+  - **Subscriber Service**: Consumes analysis events and processes web pages
+  - **HTTP API Service**: Handles REST endpoints and real-time updates
+- **Outbox Pattern**: Transactional event publishing for guaranteed delivery
+  - Atomic database transactions with event storage
+  - Reliable message publishing with retry mechanisms
+  - No message loss guarantee with PostgreSQL persistence
+- **Message Queue Integration**: RabbitMQ-based asynchronous communication
+  - Dead letter queues for failed message handling
+  - Message persistence and acknowledgment
+  - Concurrent worker processing with horizontal scaling
+
+### Clean Architecture Implementation
+- **Ports and Adapters**: Clear separation between business logic and infrastructure
+  - **Ports**: Interface definitions for external dependencies
+  - **Adapters**: Concrete implementations for databases, queues, and external services
+  - **Domain Layer**: Pure business logic without external dependencies
+- **Dependency Injection**: Runtime configuration and service composition
+  - Centralized dependency management in `internal/runtime/`
+  - Interface-based dependency injection for testability
+  - Environment-specific configuration management
+- **CQRS Pattern**: Command Query Responsibility Segregation
+  - Separate command and query handlers with dedicated decorators
+  - Optimized read/write operations for different use cases
+  - Clear separation of concerns for data access patterns
+
+### Service Layer Architecture
+- **Application Services**: Orchestration of business operations
+  - Transaction management and coordination
+  - Cross-cutting concern integration (logging, metrics, tracing)
+  - Use case implementation with comprehensive error handling
+- **Decorator Pattern**: Cross-cutting concerns implementation
+  - **Logging Decorators**: Structured logging for commands and queries
+  - **Metrics Decorators**: Performance monitoring and business metrics
+  - **Tracing Decorators**: Distributed tracing with OpenTelemetry
+  - **Validation Decorators**: Input validation and business rule enforcement
+
+### Repository Pattern
+- **Multiple Implementations**: Support for different storage backends
+  - **PostgreSQL Repository**: Primary data persistence with ACID compliance
+  - **Cache Repository**: KeyDB/Redis integration for temporary data
+  - **Vault Repository**: Secure configuration and secret management
+- **Interface Abstractions**: Storage-agnostic business logic
+  - Clean interfaces for all data access operations
+  - Easy swapping of storage implementations
+  - Comprehensive mock support for testing
+
+### Infrastructure Features
 
 ### Development Environment
-- **Docker-based Setup**: Complete containerized development environment.
-- **SSL/TLS Support**: Local development with valid certificates using mkcert.
-- **Reverse Proxy**: Traefik configuration for service routing.
-- **Local Domains**: `*.web-analyzer.dev` domains for development.
+- **Docker-based Setup**: Complete containerized development environment
+- **SSL/TLS Support**: Local development with valid certificates using mkcert
+- **Reverse Proxy**: Traefik configuration for service routing
+- **Local Domains**: `*.web-analyzer.dev` domains for development
+- **Multi-Service Architecture**: Separate containers for API, publisher, subscriber, and infrastructure
 
 ### Build & Deployment
-- **Make-based Build System**: Modular build configuration.
-- **Code Generation**: OpenAPI-to-Go code generation with oapi-codegen.
-- **API Documentation**: Auto-generated documentation from OpenAPI specification.
-- **Multi-stage Docker Builds**: Optimized container images.
+- **Make-based Build System**: Modular build configuration
+- **Code Generation**: OpenAPI-to-Go code generation with oapi-codegen
+- **API Documentation**: Auto-generated documentation from OpenAPI specification
+- **Multi-stage Docker Builds**: Optimized container images
+- **Database Migrations**: Automated schema management with version control
 
 ## User Experience Features
 
@@ -148,12 +201,70 @@ This document provides comprehensive documentation of all features implemented i
 - **Load Balancer Ready**: Traefik integration for load balancing.
 - **Container Orchestration**: Kubernetes-ready deployment.
 
+## Testing & Quality Features
+
+### Comprehensive Testing Strategy
+- **Unit Tests**: Complete test coverage for all service layers
+  - **Service Layer Tests**: Business logic testing with mocked dependencies
+  - **Repository Tests**: Data access layer testing with test databases
+  - **Adapter Tests**: Infrastructure component testing with real integrations
+- **Parallel Test Execution**: Optimized test performance with concurrent execution
+  - Go test parallel execution with `-parallel` flag
+  - Independent test isolation for reliable results
+  - Comprehensive test coverage across all layers
+- **Mock Framework Integration**: Testify framework for dependency mocking
+  - Interface-based mocking for all external dependencies
+  - Comprehensive test scenarios for success and error cases
+  - Easy test maintenance and refactoring support
+
+### Code Quality & Architecture
+- **Clean Code Principles**: Consistent code organization and standards
+  - Early returns and minimal nesting for better readability
+  - Comprehensive error handling with structured error types
+  - Interface-based design for testability and flexibility
+- **Documentation Coverage**: Comprehensive code and API documentation
+  - OpenAPI specification as single source of truth
+  - Auto-generated documentation from code
+  - Architecture decision records for design rationale
+
+## Persistent Storage Features
+
+### PostgreSQL Integration
+- **ACID Compliance**: Full transaction support for data integrity
+- **JSON/JSONB Support**: Flexible analysis data storage with native JSON types
+- **Outbox Events Table**: Event sourcing implementation for reliable message delivery
+- **Migration System**: Automated database schema management
+- **Connection Pooling**: Optimized database connection management
+
+### Vault Secret Management
+- **Centralized Secrets**: Secure storage for all sensitive configuration
+- **Dynamic Credentials**: Automatic credential rotation for database access
+- **Policy-based Access**: Fine-grained access control for different services
+- **Audit Logging**: Complete audit trail for all secret access operations
+
+### KeyDB Caching
+- **High-Performance Cache**: Redis-compatible in-memory data store
+- **TTL-based Cleanup**: Automatic expiration for temporary analysis results
+- **Clustering Support**: Horizontal scaling with KeyDB clustering
+- **Connection Management**: Optimized connection pooling and health monitoring
+
 ## Monitoring & Observability
 
-### Logging
-- **Structured Logging**: JSON-formatted logs for better parsing.
-- **Request Tracking**: Correlation IDs for request tracing.
-- **Error Logging**: Comprehensive error logging with stack traces.
+### Distributed Tracing
+- **OpenTelemetry Integration**: Complete tracing across all service boundaries
+- **Request Correlation**: End-to-end request tracking with trace IDs
+- **Performance Monitoring**: Detailed performance metrics for all operations
+- **Error Tracking**: Comprehensive error tracking with contextual information
+
+### Logging & Metrics
+- **Structured Logging**: JSON-formatted logs with consistent schema
+- **Request Tracking**: Correlation IDs for request tracing across services
+- **Error Logging**: Comprehensive error logging with stack traces and context
+- **Business Metrics**: Custom metrics for analysis operations and performance
+- **Infrastructure Metrics**: System health and resource utilization monitoring
 
 ### Health Monitoring
-- **Health Checks**: Built-in health check endpoints.
+- **Health Checks**: Built-in health check endpoints for all services
+- **Dependency Health**: Monitoring of database, cache, and queue connections
+- **Service Discovery**: Automatic service health registration with Traefik
+- **Graceful Shutdown**: Proper resource cleanup on service termination
