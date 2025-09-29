@@ -16,12 +16,9 @@ import (
 )
 
 const (
-	maxRetries           = 3
-	retryWaitTime        = 1 * time.Second
-	maxRetryWaitTime     = 5 * time.Second
-	defaultTimeout       = 30 * time.Second
-	maxRedirects         = 10
-	maxResponseSizeBytes = 10 * 1024 * 1024 // 10MB
+	minInputSize   = 3
+	maxInputSize   = 10000
+	defaultTimeout = 30 * time.Second
 )
 
 type WebPageFetcher struct {
@@ -188,6 +185,14 @@ func (f *WebPageFetcher) fetchWithRetry(ctx context.Context, targetURL string) (
 func (f *WebPageFetcher) validateURL(targetURL string) error {
 	if targetURL == "" {
 		return fmt.Errorf("URL cannot be empty")
+	}
+
+	// Validate URL length constraints (matching OpenAPI spec)
+	if len(targetURL) < minInputSize {
+		return fmt.Errorf("URL must be at least %d characters long", minInputSize)
+	}
+	if len(targetURL) > maxInputSize {
+		return fmt.Errorf("URL must not exceed %d characters", maxInputSize)
 	}
 
 	parsedURL, err := url.Parse(targetURL)

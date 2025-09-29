@@ -157,6 +157,9 @@ func initHTTPServer(cfg *config.ServiceConfig, logger *infrastructure.Logger, re
 
 	middlewares := initMiddlewares(cfg, logger)
 
+	// Add global CORS middleware to handle preflight requests
+	router.Use(middleware.NewSecurityHeadersMiddleware().Middleware)
+
 	// Spin up automatic generated routes
 	handlers.HandlerWithOptions(reqHandler, handlers.ChiServerOptions{
 		BaseURL:          "",
@@ -203,9 +206,9 @@ func initMiddlewares(cfg *config.ServiceConfig, logger *infrastructure.Logger) [
 		chimiddleware.Logger,
 		chimiddleware.Recoverer,
 		chimiddleware.Timeout(cfg.HTTPServer.WriteTimeout),
-		middleware.NewSecurityHeadersMiddleware().Middleware,
 		middleware.NewAPIVersionMiddleware(cfg.AppConfig.APIVersion).Middleware,
 		requestValidator,
+		middleware.NewSecurityHeadersMiddleware().Middleware,
 		middleware.Tracer(),
 	}
 

@@ -129,6 +129,17 @@ func (m *PasetoAuthMiddleware) extractToken(r *http.Request) (string, error) {
 		return token, nil
 	}
 
+	// For SSE endpoints (/events), try query parameter as EventSource doesn't support custom headers
+	if strings.Contains(r.URL.Path, "/events") {
+		if token := r.URL.Query().Get("token"); token != "" {
+			return token, nil
+		}
+		// Also try 'access_token' for RFC compliance
+		if token := r.URL.Query().Get("access_token"); token != "" {
+			return token, nil
+		}
+	}
+
 	return "", fmt.Errorf("authentication token not found")
 }
 

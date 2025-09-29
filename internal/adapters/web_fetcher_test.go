@@ -520,6 +520,27 @@ func (suite *WebFetcherTestSuite) TestFetch_InvalidURLs() {
 			expectedCode:   "INVALID_URL",
 			useRealFetcher: true, // Use real fetcher to test actual validation
 		},
+		{
+			name:           "URL too short (2 chars)",
+			url:            "ab",
+			expectedErrMsg: "Invalid URL: ab",
+			expectedCode:   "INVALID_URL",
+			useRealFetcher: true, // Use real fetcher to test actual validation
+		},
+		{
+			name:           "URL exactly at minimum length (3 chars)",
+			url:            "a.b",
+			expectedErrMsg: "Invalid URL: a.b",
+			expectedCode:   "INVALID_URL",
+			useRealFetcher: true, // Use real fetcher to test actual validation (will fail on other validation)
+		},
+		{
+			name:           "URL too long (>10000 chars)",
+			url:            "https://example.com/" + strings.Repeat("a", 10000),
+			expectedErrMsg: "Invalid URL: https://example.com/" + strings.Repeat("a", 10000),
+			expectedCode:   "INVALID_URL",
+			useRealFetcher: true, // Use real fetcher to test actual validation
+		},
 	}
 
 	for _, tc := range cases {
