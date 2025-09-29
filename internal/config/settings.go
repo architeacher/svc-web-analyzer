@@ -92,7 +92,8 @@ type (
 	}
 
 	SSEConfig struct {
-		EventsInterval time.Duration `envconfig:"SSE_EVENTS_INTERVAL" default:"500ms"`
+		HeartbeatInterval time.Duration `envconfig:"SSE_HEARTBEAT_INTERVAL" default:"5s"`
+		EventsInterval    time.Duration `envconfig:"SSE_EVENTS_INTERVAL" default:"100ms"`
 	}
 
 	StorageConfig struct {

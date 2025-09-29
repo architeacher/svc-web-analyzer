@@ -100,16 +100,21 @@ func initializeDependencies(ctx context.Context) (*Dependencies, error) {
 		appLogger.Fatal().Err(err).Msg("failed to initialize storage")
 	}
 
+	db, err := storage.GetDB()
+	if err != nil {
+		appLogger.Fatal().Err(err).Msg("failed to get database connection:")
+	}
+
 	analysisService := service.NewApplicationService(
-		adapters.NewPostgresRepository(storage),
+		adapters.NewAnalysisRepository(db),
+		adapters.NewOutboxRepository(db),
 		adapters.NewCacheRepository(
 			cacheClient,
 			cfg.Cache,
 			appLogger,
 		),
-		adapters.NewOutboxRepository(storage),
 		adapters.NewHealthChecker(),
-		storage,
+		db,
 		cfg.SSE,
 		appLogger,
 	)
@@ -157,6 +162,9 @@ func initHTTPServer(cfg *config.ServiceConfig, logger *infrastructure.Logger, re
 
 	middlewares := initMiddlewares(cfg, logger)
 
+	// Add global CORS middleware to handle preflight requests
+	router.Use(middleware.NewSecurityHeadersMiddleware().Middleware)
+
 	// Spin up automatic generated routes
 	handlers.HandlerWithOptions(reqHandler, handlers.ChiServerOptions{
 		BaseURL:          "",
@@ -203,9 +211,9 @@ func initMiddlewares(cfg *config.ServiceConfig, logger *infrastructure.Logger) [
 		chimiddleware.Logger,
 		chimiddleware.Recoverer,
 		chimiddleware.Timeout(cfg.HTTPServer.WriteTimeout),
-		middleware.NewSecurityHeadersMiddleware().Middleware,
 		middleware.NewAPIVersionMiddleware(cfg.AppConfig.APIVersion).Middleware,
 		requestValidator,
+		middleware.NewSecurityHeadersMiddleware().Middleware,
 		middleware.Tracer(),
 	}
 

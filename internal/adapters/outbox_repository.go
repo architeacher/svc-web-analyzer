@@ -4,51 +4,48 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand"
 	"time"
 
+	sq "github.com/Masterminds/squirrel"
 	"github.com/architeacher/svc-web-analyzer/internal/domain"
-	"github.com/architeacher/svc-web-analyzer/internal/infrastructure"
 )
 
+const outboxEventsTable = "outbox_events"
+
+var psql = sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
+
 type OutboxRepository struct {
-	storageClient *infrastructure.Storage
+	conn *sql.DB
 }
 
-func NewOutboxRepository(storageClient *infrastructure.Storage) *OutboxRepository {
+func NewOutboxRepository(dbConn *sql.DB) *OutboxRepository {
 	return &OutboxRepository{
-		storageClient: storageClient,
+		conn: dbConn,
 	}
 }
 
 // SaveInTx saves an outbox event within a transaction
 func (r *OutboxRepository) SaveInTx(tx *sql.Tx, event *domain.OutboxEvent) error {
-	query := `
-		INSERT INTO outbox_events (
-			id, aggregate_id, aggregate_type, event_type, priority,
-			retry_count, max_retries, status, payload, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
-
 	payloadJSON, err := json.Marshal(event.Payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
-	_, err = tx.Exec(
-		query,
-		event.ID,
-		event.AggregateID,
-		event.AggregateType,
-		event.EventType,
-		event.Priority,
-		event.RetryCount,
-		event.MaxRetries,
-		event.Status,
-		payloadJSON,
-		event.CreatedAt,
-	)
+	query, args, err := psql.Insert(outboxEventsTable).
+		Columns("id", "aggregate_id", "aggregate_type", "event_type", "priority",
+			"retry_count", "max_retries", "status", "payload", "created_at").
+		Values(event.ID, event.AggregateID, event.AggregateType, event.EventType, event.Priority,
+			event.RetryCount, event.MaxRetries, event.Status, payloadJSON, event.CreatedAt).
+		ToSql()
+	if err != nil {
+		return fmt.Errorf("failed to build insert query: %w", err)
+	}
+
+	_, err = tx.Exec(query, args...)
 	if err != nil {
 		return fmt.Errorf("failed to save outbox event: %w", err)
 	}
@@ -58,21 +55,19 @@ func (r *OutboxRepository) SaveInTx(tx *sql.Tx, event *domain.OutboxEvent) error
 
 // FindPending finds pending outbox events ordered by priority and creation time
 func (r *OutboxRepository) FindPending(ctx context.Context, limit int) ([]*domain.OutboxEvent, error) {
-	query := `
-		SELECT id, aggregate_id, aggregate_type, event_type, priority,
-			   retry_count, max_retries, status, payload, error_details,
-			   created_at, published_at, processing_started_at, next_retry_at
-		FROM outbox_events
-		WHERE status = 'pending'
-		ORDER BY priority DESC, created_at ASC
-		LIMIT $1`
-
-	db, err := r.storageClient.GetDB()
+	query, args, err := psql.Select("id", "aggregate_id", "aggregate_type", "event_type", "priority",
+		"retry_count", "max_retries", "status", "payload", "error_details",
+		"created_at", "published_at", "processing_started_at", "next_retry_at").
+		From(outboxEventsTable).
+		Where(sq.Eq{"status": "pending"}).
+		OrderBy("priority DESC", "created_at ASC").
+		Limit(uint64(limit)).
+		ToSql()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get database connection: %w", err)
+		return nil, fmt.Errorf("failed to build select query: %w", err)
 	}
 
-	rows, err := db.QueryContext(ctx, query, limit)
+	rows, err := r.conn.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query pending outbox events: %w", err)
 	}
@@ -83,24 +78,24 @@ func (r *OutboxRepository) FindPending(ctx context.Context, limit int) ([]*domai
 
 // FindRetryable finds failed events that are ready for retry
 func (r *OutboxRepository) FindRetryable(ctx context.Context, limit int) ([]*domain.OutboxEvent, error) {
-	query := `
-		SELECT id, aggregate_id, aggregate_type, event_type, priority,
-			   retry_count, max_retries, status, payload, error_details,
-			   created_at, published_at, processing_started_at, next_retry_at
-		FROM outbox_events
-		WHERE status = 'failed'
-		  AND next_retry_at IS NOT NULL
-		  AND next_retry_at <= NOW()
-		  AND retry_count < max_retries
-		ORDER BY next_retry_at ASC
-		LIMIT $1`
-
-	db, err := r.storageClient.GetDB()
+	query, args, err := psql.Select("id", "aggregate_id", "aggregate_type", "event_type", "priority",
+		"retry_count", "max_retries", "status", "payload", "error_details",
+		"created_at", "published_at", "processing_started_at", "next_retry_at").
+		From(outboxEventsTable).
+		Where(sq.And{
+			sq.Eq{"status": "failed"},
+			sq.NotEq{"next_retry_at": nil},
+			sq.Expr("next_retry_at <= NOW()"),
+			sq.Expr("retry_count < max_retries"),
+		}).
+		OrderBy("next_retry_at ASC").
+		Limit(uint64(limit)).
+		ToSql()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get database connection: %w", err)
+		return nil, fmt.Errorf("failed to build select query: %w", err)
 	}
 
-	rows, err := db.QueryContext(ctx, query, limit)
+	rows, err := r.conn.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query retryable outbox events: %w", err)
 	}
@@ -111,30 +106,29 @@ func (r *OutboxRepository) FindRetryable(ctx context.Context, limit int) ([]*dom
 
 // ClaimForProcessing atomically claims an event for processing
 func (r *OutboxRepository) ClaimForProcessing(ctx context.Context, eventID string) (*domain.OutboxEvent, error) {
-	db, err := r.storageClient.GetDB()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get database connection: %w", err)
-	}
-
-	tx, err := db.BeginTx(ctx, nil)
+	tx, err := r.conn.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback()
 
-	// Try to claim the event atomically
-	updateQuery := `
-		UPDATE outbox_events
-		SET status = 'processing', processing_started_at = NOW()
-		WHERE id = $1 AND status IN ('pending', 'failed')
-		RETURNING id, aggregate_id, aggregate_type, event_type, priority,
-				  retry_count, max_retries, status, payload, error_details,
-				  created_at, published_at, processing_started_at, next_retry_at`
+	query, args, err := psql.Update(outboxEventsTable).
+		Set("status", "processing").
+		Set("processing_started_at", sq.Expr("NOW()")).
+		Where(sq.And{
+			sq.Eq{"id": eventID},
+			sq.Or{sq.Eq{"status": "pending"}, sq.Eq{"status": "failed"}},
+		}).
+		Suffix("RETURNING id, aggregate_id, aggregate_type, event_type, priority, retry_count, max_retries, status, payload, error_details, created_at, published_at, processing_started_at, next_retry_at").
+		ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build update query: %w", err)
+	}
 
-	row := tx.QueryRowContext(ctx, updateQuery, eventID)
+	row := tx.QueryRowContext(ctx, query, args...)
 	event, err := r.scanSingleOutboxEvent(row)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("event not found or already claimed")
 		}
 		return nil, fmt.Errorf("failed to claim event: %w", err)
@@ -149,17 +143,23 @@ func (r *OutboxRepository) ClaimForProcessing(ctx context.Context, eventID strin
 
 // MarkPublished marks an event as successfully published
 func (r *OutboxRepository) MarkPublished(ctx context.Context, eventID string) error {
-	db, err := r.storageClient.GetDB()
+	tx, err := r.conn.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("failed to get database connection: %w", err)
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	query, args, err := psql.Update(outboxEventsTable).
+		Set("status", "published").
+		Set("published_at", sq.Expr("NOW()")).
+		Set("processing_started_at", nil).
+		Where(sq.Eq{"id": eventID}).
+		ToSql()
+	if err != nil {
+		return fmt.Errorf("failed to build update query: %w", err)
 	}
 
-	query := `
-		UPDATE outbox_events
-		SET status = 'published', published_at = NOW(), processing_started_at = NULL
-		WHERE id = $1`
-
-	result, err := db.ExecContext(ctx, query, eventID)
+	result, err := tx.ExecContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("failed to mark event as published: %w", err)
 	}
@@ -173,26 +173,34 @@ func (r *OutboxRepository) MarkPublished(ctx context.Context, eventID string) er
 		return fmt.Errorf("event not found: %s", eventID)
 	}
 
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
 	return nil
 }
 
 // MarkFailed marks an event as failed with error details and retry timing
 func (r *OutboxRepository) MarkFailed(ctx context.Context, eventID string, errorDetails string, nextRetryAt *time.Time) error {
-	db, err := r.storageClient.GetDB()
+	tx, err := r.conn.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("failed to get database connection: %w", err)
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	query, args, err := psql.Update(outboxEventsTable).
+		Set("status", "failed").
+		Set("retry_count", sq.Expr("retry_count + 1")).
+		Set("error_details", errorDetails).
+		Set("next_retry_at", nextRetryAt).
+		Set("processing_started_at", nil).
+		Where(sq.Eq{"id": eventID}).
+		ToSql()
+	if err != nil {
+		return fmt.Errorf("failed to build update query: %w", err)
 	}
 
-	query := `
-		UPDATE outbox_events
-		SET status = 'failed',
-			retry_count = retry_count + 1,
-			error_details = $2,
-			next_retry_at = $3,
-			processing_started_at = NULL
-		WHERE id = $1`
-
-	result, err := db.ExecContext(ctx, query, eventID, errorDetails, nextRetryAt)
+	result, err := tx.ExecContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("failed to mark event as failed: %w", err)
 	}
@@ -206,25 +214,33 @@ func (r *OutboxRepository) MarkFailed(ctx context.Context, eventID string, error
 		return fmt.Errorf("event not found: %s", eventID)
 	}
 
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
 	return nil
 }
 
 // MarkPermanentlyFailed marks an event as permanently failed after max retries
 func (r *OutboxRepository) MarkPermanentlyFailed(ctx context.Context, eventID string, errorDetails string) error {
-	db, err := r.storageClient.GetDB()
+	tx, err := r.conn.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("failed to get database connection: %w", err)
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	query, args, err := psql.Update(outboxEventsTable).
+		Set("status", "failed").
+		Set("error_details", errorDetails).
+		Set("next_retry_at", nil).
+		Set("processing_started_at", nil).
+		Where(sq.Eq{"id": eventID}).
+		ToSql()
+	if err != nil {
+		return fmt.Errorf("failed to build update query: %w", err)
 	}
 
-	query := `
-		UPDATE outbox_events
-		SET status = 'failed',
-			error_details = $2,
-			next_retry_at = NULL,
-			processing_started_at = NULL
-		WHERE id = $1`
-
-	result, err := db.ExecContext(ctx, query, eventID, errorDetails)
+	result, err := tx.ExecContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("failed to mark event as permanently failed: %w", err)
 	}
@@ -236,6 +252,10 @@ func (r *OutboxRepository) MarkPermanentlyFailed(ctx context.Context, eventID st
 
 	if rowsAffected == 0 {
 		return fmt.Errorf("event not found: %s", eventID)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	return nil
@@ -272,7 +292,7 @@ func (r *OutboxRepository) scanOutboxEvent(rows *sql.Rows) (*domain.OutboxEvent,
 
 // Scanner interface for both sql.Row and sql.Rows
 type scanner interface {
-	Scan(dest ...interface{}) error
+	Scan(dest ...any) error
 }
 
 // Generic scan function that works with both sql.Row and sql.Rows
@@ -311,7 +331,7 @@ func (r *OutboxRepository) scanOutboxEventFromScanner(s scanner) (*domain.Outbox
 }
 
 // unmarshalPayload unmarshals the payload JSON into the appropriate type based on event type
-func (r *OutboxRepository) unmarshalPayload(eventType domain.OutboxEventType, payloadJSON []byte) (interface{}, error) {
+func (r *OutboxRepository) unmarshalPayload(eventType domain.OutboxEventType, payloadJSON []byte) (any, error) {
 	switch eventType {
 	case domain.OutboxEventAnalysisRequested, domain.OutboxEventAnalysisRetry:
 		var payload domain.AnalysisRequestPayload
@@ -320,8 +340,8 @@ func (r *OutboxRepository) unmarshalPayload(eventType domain.OutboxEventType, pa
 		}
 		return payload, nil
 	default:
-		// For unknown event types, fallback to generic interface{}
-		var payload interface{}
+		// For unknown event types, fallback to generic any
+		var payload any
 		if err := json.Unmarshal(payloadJSON, &payload); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal generic payload: %w", err)
 		}

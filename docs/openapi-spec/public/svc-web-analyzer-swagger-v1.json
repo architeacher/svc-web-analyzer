@@ -1037,7 +1037,7 @@
         ],
         "security": [
           {
-            "PasetoAuth": []
+            "PasetoQueryAuth": []
           }
         ],
         "parameters": [
@@ -1064,6 +1064,15 @@
               "format": "uuid"
             },
             "description": "The unique identifier of the analysis"
+          },
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PASETO authentication token for SSE connection"
           }
         ],
         "responses": {
@@ -2307,6 +2316,12 @@
         "type": "http",
         "scheme": "basic",
         "description": "Basic HTTP authentication for administrative endpoints"
+      },
+      "PasetoQueryAuth": {
+        "type": "apiKey",
+        "in": "query",
+        "name": "token",
+        "description": "PASETO token passed as query parameter for EventSource connections.\nUsed for SSE endpoints where custom headers are not supported by browsers.\nFormat: v4.local.{payload} or v4.public.{payload}.{signature}\n"
       }
     },
     "schemas": {

@@ -72,9 +72,9 @@ func TestOutboxEventValidation(t *testing.T) {
 				EventType:     domain.OutboxEventAnalysisRequested,
 				Priority:      domain.PriorityNormal,
 				Status:        domain.OutboxStatusPending,
-				Payload: map[string]interface{}{
+				Payload: map[string]any{
 					"analysis_id": uuid.New().String(),
-					"url":        "https://example.com",
+					"url":         "https://example.com",
 				},
 				CreatedAt: time.Now(),
 			},
@@ -89,7 +89,7 @@ func TestOutboxEventValidation(t *testing.T) {
 				EventType:     domain.OutboxEventAnalysisRequested,
 				Priority:      domain.PriorityNormal,
 				Status:        domain.OutboxStatusPending,
-				Payload:       map[string]interface{}{},
+				Payload:       map[string]any{},
 				CreatedAt:     time.Now(),
 			},
 			wantErr: false, // Empty payload is valid for some event types
@@ -114,9 +114,9 @@ func TestEventStatusTransitions(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name           string
-		currentStatus  domain.OutboxStatus
-		targetStatus   domain.OutboxStatus
+		name            string
+		currentStatus   domain.OutboxStatus
+		targetStatus    domain.OutboxStatus
 		validTransition bool
 	}{
 		{"pending to processing", domain.OutboxStatusPending, domain.OutboxStatusProcessing, true},
@@ -173,10 +173,10 @@ func TestRetryCountValidation(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name         string
-		retryCount   int
-		maxRetries   int
-		shouldRetry  bool
+		name        string
+		retryCount  int
+		maxRetries  int
+		shouldRetry bool
 	}{
 		{"first attempt", 0, 3, true},
 		{"second attempt", 1, 3, true},
@@ -200,20 +200,20 @@ func TestJSONPayloadHandling(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		payload map[string]interface{}
+		payload map[string]any
 		valid   bool
 	}{
 		{
 			name: "simple payload",
-			payload: map[string]interface{}{
+			payload: map[string]any{
 				"key": "value",
 			},
 			valid: true,
 		},
 		{
 			name: "nested payload",
-			payload: map[string]interface{}{
-				"nested": map[string]interface{}{
+			payload: map[string]any{
+				"nested": map[string]any{
 					"inner": "value",
 				},
 			},
@@ -221,7 +221,7 @@ func TestJSONPayloadHandling(t *testing.T) {
 		},
 		{
 			name:    "empty payload",
-			payload: map[string]interface{}{},
+			payload: map[string]any{},
 			valid:   true,
 		},
 		{

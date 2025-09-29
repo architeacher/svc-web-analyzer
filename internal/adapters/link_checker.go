@@ -160,7 +160,7 @@ func (lc *LinkChecker) checkLinksWithConcurrency(ctx context.Context, links []do
 func (lc *LinkChecker) checkSingleLink(ctx context.Context, link domain.Link) *domain.InaccessibleLink {
 	startTime := time.Now()
 
-	result, err := lc.circuitBreaker.Execute(func() (interface{}, error) {
+	result, err := lc.circuitBreaker.Execute(func() (any, error) {
 		return lc.performLinkCheck(ctx, link.URL)
 	})
 

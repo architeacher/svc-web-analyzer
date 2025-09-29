@@ -23,7 +23,7 @@ type DomainError struct {
 	Message    string
 	StatusCode int
 	Cause      error
-	Details    map[string]interface{}
+	Details    map[string]any
 }
 
 func (e *DomainError) Error() string {

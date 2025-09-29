@@ -10,19 +10,21 @@ import (
 	"strings"
 	"time"
 
+	sq "github.com/Masterminds/squirrel"
 	"github.com/architeacher/svc-web-analyzer/internal/domain"
-	"github.com/architeacher/svc-web-analyzer/internal/infrastructure"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 )
 
-type PostgresRepository struct {
-	storageClient *infrastructure.Storage
+const analysisTable = "analysis"
+
+type AnalysisRepository struct {
+	conn *sql.DB
 }
 
-func NewPostgresRepository(storageClient *infrastructure.Storage) PostgresRepository {
-	return PostgresRepository{
-		storageClient: storageClient,
+func NewAnalysisRepository(dbConn *sql.DB) AnalysisRepository {
+	return AnalysisRepository{
+		conn: dbConn,
 	}
 }
 
@@ -61,18 +63,15 @@ func normalizeURL(rawURL string) (string, error) {
 	return parsedURL.String(), nil
 }
 
-func (r PostgresRepository) Find(ctx context.Context, analysisID string) (*domain.Analysis, error) {
-	db, err := r.storageClient.GetDB()
+func (r AnalysisRepository) Find(ctx context.Context, analysisID string) (*domain.Analysis, error) {
+	query, args, err := psql.Select("id", "url", "status", "created_at", "completed_at", "duration_ms", "results",
+		"error_code", "error_message", "error_status_code", "error_details").
+		From(analysisTable).
+		Where(sq.Eq{"id": analysisID}).
+		ToSql()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get database connection: %w", err)
+		return nil, fmt.Errorf("failed to build select query: %w", err)
 	}
-
-	query := `
-		SELECT id, url, status, created_at, completed_at, duration_ms, results,
-		       error_code, error_message, error_status_code, error_details
-		FROM analysis
-		WHERE id = $1
-	`
 
 	var analysis domain.Analysis
 	var completedAt sql.NullTime
@@ -83,7 +82,7 @@ func (r PostgresRepository) Find(ctx context.Context, analysisID string) (*domai
 	var errorStatusCode sql.NullInt32
 	var errorDetails sql.NullString
 
-	err = db.QueryRowContext(ctx, query, analysisID).Scan(
+	err = r.conn.QueryRowContext(ctx, query, args...).Scan(
 		&analysis.ID,
 		&analysis.URL,
 		&analysis.Status,
@@ -138,13 +137,7 @@ func (r PostgresRepository) Find(ctx context.Context, analysisID string) (*domai
 	return &analysis, nil
 }
 
-func (r PostgresRepository) Save(ctx context.Context, url string, options domain.AnalysisOptions) (*domain.Analysis, error) {
-	db, err := r.storageClient.GetDB()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get database connection: %w", err)
-	}
-
-	// Normalize the URL
+func (r AnalysisRepository) Save(ctx context.Context, url string, options domain.AnalysisOptions) (*domain.Analysis, error) {
 	normalizedURL, err := normalizeURL(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to normalize URL: %w", err)
@@ -157,23 +150,16 @@ func (r PostgresRepository) Save(ctx context.Context, url string, options domain
 		CreatedAt: time.Now(),
 	}
 
-	query := `
-		INSERT INTO analysis (
-			id, url, url_normalized, status, created_at
-		) VALUES (
-			$1, $2, $3, $4, $5
-		)
-		RETURNING id, created_at
-	`
+	query, args, err := psql.Insert(analysisTable).
+		Columns("id", "url", "url_normalized", "status", "created_at").
+		Values(analysis.ID, analysis.URL, normalizedURL, analysis.Status, analysis.CreatedAt).
+		Suffix("RETURNING id, created_at").
+		ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build insert query: %w", err)
+	}
 
-	err = db.QueryRowContext(ctx, query,
-		analysis.ID,
-		analysis.URL,
-		normalizedURL,
-		analysis.Status,
-		analysis.CreatedAt,
-	).Scan(&analysis.ID, &analysis.CreatedAt)
-
+	err = r.conn.QueryRowContext(ctx, query, args...).Scan(&analysis.ID, &analysis.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save analysis: %w", err)
 	}
@@ -182,8 +168,7 @@ func (r PostgresRepository) Save(ctx context.Context, url string, options domain
 }
 
 // SaveInTx saves an analysis within a transaction for the outbox pattern
-func (r PostgresRepository) SaveInTx(tx *sql.Tx, url string, options domain.AnalysisOptions) (*domain.Analysis, error) {
-	// Normalize the URL
+func (r AnalysisRepository) SaveInTx(tx *sql.Tx, url string, options domain.AnalysisOptions) (*domain.Analysis, error) {
 	normalizedURL, err := normalizeURL(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to normalize URL: %w", err)
@@ -196,30 +181,21 @@ func (r PostgresRepository) SaveInTx(tx *sql.Tx, url string, options domain.Anal
 		CreatedAt: time.Now(),
 	}
 
-	// Marshal options to JSON for storage
 	optionsJSON, err := json.Marshal(options)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal options: %w", err)
 	}
 
-	query := `
-		INSERT INTO analysis (
-			id, url, url_normalized, status, options, created_at
-		) VALUES (
-			$1, $2, $3, $4, $5, $6
-		)
-		RETURNING id, created_at
-	`
+	query, args, err := psql.Insert(analysisTable).
+		Columns("id", "url", "url_normalized", "status", "options", "created_at").
+		Values(analysis.ID, analysis.URL, normalizedURL, analysis.Status, optionsJSON, analysis.CreatedAt).
+		Suffix("RETURNING id, created_at").
+		ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build insert query: %w", err)
+	}
 
-	err = tx.QueryRow(query,
-		analysis.ID,
-		analysis.URL,
-		normalizedURL,
-		analysis.Status,
-		optionsJSON,
-		analysis.CreatedAt,
-	).Scan(&analysis.ID, &analysis.CreatedAt)
-
+	err = tx.QueryRow(query, args...).Scan(&analysis.ID, &analysis.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save analysis in transaction: %w", err)
 	}
@@ -227,7 +203,7 @@ func (r PostgresRepository) SaveInTx(tx *sql.Tx, url string, options domain.Anal
 	return analysis, nil
 }
 
-func (r PostgresRepository) Update(ctx context.Context, url string, options domain.AnalysisOptions) error {
+func (r AnalysisRepository) Update(ctx context.Context, url string, options domain.AnalysisOptions) error {
 	// This method signature doesn't make sense for updating an analysis
 	// We need the analysis ID to update, but the interface only provides url and options
 	// This appears to be a design issue with the interface
@@ -235,11 +211,12 @@ func (r PostgresRepository) Update(ctx context.Context, url string, options doma
 }
 
 // UpdateAnalysis updates an existing analysis record
-func (r PostgresRepository) UpdateAnalysis(ctx context.Context, analysis *domain.Analysis) error {
-	db, err := r.storageClient.GetDB()
+func (r AnalysisRepository) UpdateAnalysis(ctx context.Context, analysis *domain.Analysis) error {
+	tx, err := r.conn.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("failed to get database connection: %w", err)
+		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
+	defer tx.Rollback()
 
 	var resultsJSON sql.NullString
 	if analysis.Results != nil {
@@ -273,31 +250,22 @@ func (r PostgresRepository) UpdateAnalysis(ctx context.Context, analysis *domain
 		}
 	}
 
-	query := `
-		UPDATE analysis SET
-			status = $2,
-			completed_at = $3,
-			duration_ms = $4,
-			results = $5,
-			error_code = $6,
-			error_message = $7,
-			error_status_code = $8,
-			error_details = $9
-		WHERE id = $1
-	`
+	query, args, err := psql.Update(analysisTable).
+		Set("status", analysis.Status).
+		Set("completed_at", completedAt).
+		Set("duration_ms", durationMs).
+		Set("results", resultsJSON).
+		Set("error_code", errorCode).
+		Set("error_message", errorMessage).
+		Set("error_status_code", errorStatusCode).
+		Set("error_details", errorDetails).
+		Where(sq.Eq{"id": analysis.ID}).
+		ToSql()
+	if err != nil {
+		return fmt.Errorf("failed to build update query: %w", err)
+	}
 
-	result, err := db.ExecContext(ctx, query,
-		analysis.ID,
-		analysis.Status,
-		completedAt,
-		durationMs,
-		resultsJSON,
-		errorCode,
-		errorMessage,
-		errorStatusCode,
-		errorDetails,
-	)
-
+	result, err := tx.ExecContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("failed to update analysis: %w", err)
 	}
@@ -311,18 +279,28 @@ func (r PostgresRepository) UpdateAnalysis(ctx context.Context, analysis *domain
 		return fmt.Errorf("analysis with ID %s not found", analysis.ID)
 	}
 
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
 	return nil
 }
 
-func (r PostgresRepository) Delete(ctx context.Context, analysisID string) error {
-	db, err := r.storageClient.GetDB()
+func (r AnalysisRepository) Delete(ctx context.Context, analysisID string) error {
+	tx, err := r.conn.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("failed to get database connection: %w", err)
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	query, args, err := psql.Delete(analysisTable).
+		Where(sq.Eq{"id": analysisID}).
+		ToSql()
+	if err != nil {
+		return fmt.Errorf("failed to build delete query: %w", err)
 	}
 
-	query := `DELETE FROM analysis WHERE id = $1`
-
-	result, err := db.ExecContext(ctx, query, analysisID)
+	result, err := tx.ExecContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("failed to delete analysis: %w", err)
 	}
@@ -334,6 +312,10 @@ func (r PostgresRepository) Delete(ctx context.Context, analysisID string) error
 
 	if rowsAffected == 0 {
 		return fmt.Errorf("analysis with ID %s not found", analysisID)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	return nil

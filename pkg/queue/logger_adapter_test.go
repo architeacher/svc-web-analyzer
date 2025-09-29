@@ -57,7 +57,7 @@ func TestLogEventAdapter_Msg(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
+		name      string
 		setupMock func() *LogEventAdapter
 	}{
 		{
@@ -263,14 +263,28 @@ type MockInfrastructureLogger struct {
 	mock.Mock
 }
 
-func (m *MockInfrastructureLogger) Info() interface{ Msg(string); Str(string, string) interface{ Msg(string) } } {
+func (m *MockInfrastructureLogger) Info() interface {
+	Msg(string)
+	Str(string, string) interface{ Msg(string) }
+} {
 	args := m.Called()
-	return args.Get(0).(interface{ Msg(string); Str(string, string) interface{ Msg(string) } })
+	return args.Get(0).(interface {
+		Msg(string)
+		Str(string, string) interface{ Msg(string) }
+	})
 }
 
-func (m *MockInfrastructureLogger) Error() interface{ Msg(string); Err(error) interface{}; Str(string, string) interface{} } {
+func (m *MockInfrastructureLogger) Error() interface {
+	Msg(string)
+	Err(error) any
+	Str(string, string) any
+} {
 	args := m.Called()
-	return args.Get(0).(interface{ Msg(string); Err(error) interface{}; Str(string, string) interface{} })
+	return args.Get(0).(interface {
+		Msg(string)
+		Err(error) any
+		Str(string, string) any
+	})
 }
 
 func (m *MockInfrastructureLogger) Debug() interface{ Msg(string) } {
@@ -304,12 +318,12 @@ func (m *MockInfrastructureErrorEvent) Msg(msg string) {
 	m.Called(msg)
 }
 
-func (m *MockInfrastructureErrorEvent) Err(err error) interface{} {
+func (m *MockInfrastructureErrorEvent) Err(err error) any {
 	args := m.Called(err)
 	return args.Get(0)
 }
 
-func (m *MockInfrastructureErrorEvent) Str(key, value string) interface{} {
+func (m *MockInfrastructureErrorEvent) Str(key, value string) any {
 	args := m.Called(key, value)
 	return args.Get(0)
 }
@@ -330,7 +344,7 @@ func (m *MockInfoEvent) Msg(msg string) {
 	m.Called(msg)
 }
 
-func (m *MockInfoEvent) Str(key, value string) interface{} {
+func (m *MockInfoEvent) Str(key, value string) any {
 	args := m.Called(key, value)
 	return args.Get(0)
 }
@@ -343,12 +357,12 @@ func (m *MockErrorEvent) Msg(msg string) {
 	m.Called(msg)
 }
 
-func (m *MockErrorEvent) Err(err error) interface{} {
+func (m *MockErrorEvent) Err(err error) any {
 	args := m.Called(err)
 	return args.Get(0)
 }
 
-func (m *MockErrorEvent) Str(key, value string) interface{} {
+func (m *MockErrorEvent) Str(key, value string) any {
 	args := m.Called(key, value)
 	return args.Get(0)
 }

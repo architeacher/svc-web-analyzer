@@ -76,6 +76,30 @@ For detailed architecture information, see [Architecture Decisions](docs/archite
 - **Local Development**: SSL certificate generation with mkcert
 - **Documentation**: Redocly CLI for API bundling and validation
 
+## User Interface
+
+The Web Analyzer provides a modern, intuitive web interface for analyzing web pages in real-time.
+
+![Web Analyzer UI](assets/web-analyzer-ui-screenshot.png "Web Analyzer UI")
+
+### Accessing the UI
+
+Once you have the services running (see [Quick Start](#quick-start)), access the web interface at:
+
+**🌐 https://web-analyzer.dev**
+
+### UI Features
+
+- **URL Analysis**: Enter any URL to analyze its HTML structure, links, and forms
+- **Real-time Progress**: Live updates via Server-Sent Events as analysis progresses
+- **Interactive Results**: View detailed analysis results including:
+  - HTML version and page title
+  - Heading structure (H1-H6 counts)
+  - Link analysis (internal/external, accessibility)
+  - Form detection and analysis
+- **Modern Design**: Responsive interface built with Vue.js and Tailwind CSS
+- **Secure Authentication**: Integrated PASETO token authentication
+
 ## Quick Start
 
 ### Prerequisites
@@ -138,11 +162,12 @@ Before running the application, ensure you have the following installed:
    ```
 
 3. **Access the application**
-    - **API**: https://api.web-analyzer.dev/v1/ (API documentation)
-    - **Documentation**: https://docs.web-analyzer.dev
+    - **Web UI**: https://web-analyzer.dev (Main application interface)
+    - **API**: https://api.web-analyzer.dev/v1/ (REST API endpoints)
+    - **API Documentation**: https://docs.web-analyzer.dev (Interactive Swagger UI)
     - **Traefik Dashboard**: https://traefik.web-analyzer.dev (admin/admin)
-    - **Vault**: https://vault.web-analyzer.dev
-    - **RabbitMQ**: https://rabbitmq.web-analyzer.dev
+    - **Vault**: https://vault.web-analyzer.dev (Token: see .envrc)
+    - **RabbitMQ Management**: https://rabbitmq.web-analyzer.dev (admin/bottom.Secret)
 
 ### Environment Variables
 
@@ -163,41 +188,62 @@ Key environment variables:
 ### Development Commands
 
 ```bash
-# Initialize project (hosts, SSL certs, API generation)
+# Initialize project (environment, hosts, SSL certs, dependencies, API generation)
 make init
 
-# Start development services
+# Start all development services with Docker Compose
 make start
 
-# Stop and remove development services
+# Restart Docker containers without recreating
+make restart
+
+# Stop and remove all development containers
 make destroy
 
-# Generate SSL certificates for local development
+# Generate SSL certificates for local development (*.web-analyzer.dev)
 make certify
+
+# Install mkcert and prepare for certification
+make study
 
 # Generate API code from OpenAPI specification
 make generate-api
 
-# Create new database migration
+# Create new database migration (requires migration_name parameter)
 make create-migration migration_name=<name>
 
-# Run all tests
+# Run all tests with race detection
 make test
 
-# Update local hosts
+# Update /etc/hosts with local domains
 make set-hosts
 
-# View all available targets
+# View all available targets with descriptions
 make help
 
-# List all targets
+# List all available targets
 make list
 
-# Default target
+# Run default target (shows help)
 make default
+```
 
-# Study mode (certification preparation)
-make study
+**Common Workflows:**
+
+```bash
+# First-time setup
+make init start
+
+# Daily development
+make start          # Start services
+make test           # Run tests
+make restart        # Restart after changes
+
+# Add database changes
+make create-migration migration_name=add_new_feature
+
+# Clean up
+make destroy        # Stop and remove all containers
 ```
 
 ### Three-Service Architecture
@@ -313,23 +359,23 @@ curl https://api.web-analyzer.dev/v1/analysis/50192680-b80f-49b8-855f-8a525b08ef
 
 **SSE Event Stream Example:**
 ```
-event: progress
-data: {"stage": "queued", "progress": 0, "message": "Analysis queued", "timestamp": "2025-09-28T16:09:49.353Z"}
+event: analysis_started
+data: {"analysis_id":"2e4085c8-9bbd-45c0-83a8-e6cf4f22a417","url":"https://github.com/login","status":"requested","created_at":"2025-09-29T15:53:21.406064Z"}
 
-event: progress
-data: {"stage": "fetching", "progress": 20, "message": "Fetching web page", "timestamp": "2025-09-28T16:09:50.123Z"}
+event: analysis_progress
+data: {"analysis_id":"2e4085c8-9bbd-45c0-83a8-e6cf4f22a417","url":"https://github.com/login","status":"requested","created_at":"2025-09-29T15:53:21.406064Z"}
 
-event: progress
-data: {"stage": "parsing_html", "progress": 50, "message": "Parsing HTML structure", "timestamp": "2025-09-28T16:09:51.456Z"}
+event: analysis_progress
+data: {"analysis_id":"2e4085c8-9bbd-45c0-83a8-e6cf4f22a417","url":"https://github.com/login","status":"requested","created_at":"2025-09-29T15:53:21.406064Z"}
 
-event: progress
-data: {"stage": "analyzing_links", "progress": 75, "message": "Analyzing links", "timestamp": "2025-09-28T16:09:52.789Z"}
+event: analysis_progress
+data: {"analysis_id":"2e4085c8-9bbd-45c0-83a8-e6cf4f22a417","url":"https://github.com/login","status":"requested","created_at":"2025-09-29T15:53:21.406064Z"}
 
-event: completed
-data: {"stage": "completed", "progress": 100, "message": "Analysis completed", "timestamp": "2025-09-28T16:09:53.123Z", "analysis_id": "52d22202-b31c-498f-855d-c1effd079ec1"}
+event: analysis_completed
+data: {"analysis_id":"3e75292f-6f6e-4dc4-a287-4a69c75efa87","url":"","status":"completed","created_at":"0001-01-01T00:00:00Z","results":{"html_version":"HTML5","title":"Sign in to GitHub Â· GitHub","heading_counts":{"h1":1,"h2":0,"h3":1,"h4":0,"h5":0,"h6":0},"links":{"internal_count":2,"external_count":4,"total_count":6,"inaccessible_links":null},"forms":{"total_count":1,"login_forms_detected":1,"login_form_details":[{"method":"POST","action":"https://github.com/session","fields":["authenticity_token","add_account","login","password","webauthn-conditional","javascript-support","webauthn-support","webauthn-iuvpaa-support","return_to","allow_signup","client_id","integration","required_field_88f1","timestamp","timestamp_secret","commit"]}]}}}
 
-event: error
-data: {"stage": "error", "progress": 0, "message": "Failed to fetch web page: connection timeout", "timestamp": "2025-09-28T16:09:54.456Z", "error_code": "FETCH_TIMEOUT"}
+event: analysis_error
+data: {"error": "failed to fetch events"}
 ```
 
 **Event Types:**
@@ -436,45 +482,44 @@ go test -parallel 8 ./...
 - **API Documentation**: Auto-generated from OpenAPI specification
 - **Testing Framework**: Testify for assertions and mocking
 
-## TODOs
+## Project Status
 
-### Testing & Quality
-- **Increase Test Coverage**: Expand unit and integration test coverage across all layers
-    - Add comprehensive tests for domain entities and business logic
-    - Implement integration tests for API endpoints
-    - Add middleware and adapter layer testing
-    - Target 80%+ code coverage across the codebase
+### Completed Features ✅
+- **Event-Driven Architecture**: Publisher/subscriber pattern with RabbitMQ
+- **Outbox Pattern**: Transactional outbox for reliable message delivery
+- **Three-Service Architecture**: HTTP API, Publisher, and Subscriber services
+- **Complete Backend**: Clean architecture with ports/adapters pattern
+- **CQRS Implementation**: Separate command and query handlers with decorators
+- **Repository Pattern**: PostgreSQL, KeyDB cache, and Vault implementations
+- **Comprehensive Testing**: Unit tests with parallel execution for all layers
+- **Real-time Updates**: Server-Sent Events (SSE) for analysis progress
+- **PASETO Authentication**: Secure token-based authentication
+- **Database Migrations**: Automated schema management
+- **Docker Deployment**: Complete containerization with Traefik
+- **SSL/TLS Setup**: Local development certificates with mkcert
+- **API Documentation**: Auto-generated from OpenAPI 3.0.3 specification
 
-### Performance & Scalability
-- **Background Job Processing**: Implement queue-based analysis processing
-    - Integrate message queue system (Redis Queue, RabbitMQ, or similar)
-    - Move web page analysis to background workers
-    - Implement job status tracking and progress updates
-    - Add retry mechanisms for failed analysis jobs
+### Future Enhancements 🚀
 
-- **Content Deduplication**: Optimize analysis efficiency with content hashing
-    - Calculate SHA-256 hash of HTML content
-    - Store hash-to-analysis mapping to avoid duplicate processing
-    - Implement cache lookup before initiating new analysis
-    - Return cached results for identical content
+#### Testing & Quality
+- **Integration Tests**: End-to-end API endpoint testing
+- **Performance Tests**: Load testing for analysis workflows
+- **Target Coverage**: 80%+ code coverage across all layers
 
-### Code Quality & Architecture
-- **Refactoring Improvements**
-    - Extract common patterns into reusable components
-    - Simplify complex adapter implementations
-    - Improve error handling consistency across layers
-    - Optimize dependency injection and configuration management
-    - Review and consolidate middleware implementations
-    - Adding linting rules
+#### Performance & Scalability
+- **Content Deduplication**: SHA-256 hashing to avoid duplicate processing
+- **Horizontal Scaling**: Load balancing for publisher/subscriber services
+- **Caching Strategy**: Enhanced cache warming and invalidation
 
-### Observability & Maintainability
-- **Enhanced Analysis Features**
-    - Metrics and monitoring integration
-    - Performance metrics collection
-    - Security vulnerability detection
+#### Code Quality & Architecture
+- **Linting Rules**: golangci-lint integration with CI/CD
+- **Code Refactoring**: Extract common patterns and simplify adapters
+- **Error Handling**: Consistent error handling across all layers
 
-- **Operational Improvements**
-    - CI/CD pipeline
-    - K8s deployment
+#### Observability & Operations
+- **Metrics Integration**: Prometheus metrics for monitoring
+- **Performance Monitoring**: APM integration for bottleneck detection
+- **CI/CD Pipeline**: Automated testing and deployment
+- **Kubernetes Deployment**: Production-ready K8s manifests
 
-These improvements will enhance the application's reliability, performance, and maintainability while reducing operational overhead.
+These enhancements will further improve reliability, performance, and operational excellence.

@@ -126,8 +126,8 @@ func (c *KeydbClient) Delete(ctx context.Context, key string) error {
 
 // keydb statistics and monitoring
 
-func (c *KeydbClient) GetStats(ctx context.Context) (map[string]interface{}, error) {
-	stats := make(map[string]interface{})
+func (c *KeydbClient) GetStats(ctx context.Context) (map[string]any, error) {
+	stats := make(map[string]any)
 
 	// Get keydb info
 	info, err := c.client.Info(ctx, "memory", "stats", "clients").Result()
@@ -139,7 +139,7 @@ func (c *KeydbClient) GetStats(ctx context.Context) (map[string]interface{}, err
 
 	// Get pool stats
 	poolStats := c.client.PoolStats()
-	stats["pool_stats"] = map[string]interface{}{
+	stats["pool_stats"] = map[string]any{
 		"hits":        poolStats.Hits,
 		"misses":      poolStats.Misses,
 		"timeouts":    poolStats.Timeouts,

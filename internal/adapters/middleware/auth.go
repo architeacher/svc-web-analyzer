@@ -28,7 +28,7 @@ type PasetoTokenClaims struct {
 }
 
 // parseTimeField converts either an ISO 8601 string or Unix timestamp to Unix timestamp
-func parseTimeField(value interface{}) (int64, error) {
+func parseTimeField(value any) (int64, error) {
 	switch v := value.(type) {
 	case string:
 		// Parse ISO 8601 timestamp
@@ -129,6 +129,17 @@ func (m *PasetoAuthMiddleware) extractToken(r *http.Request) (string, error) {
 		return token, nil
 	}
 
+	// For SSE endpoints (/events), try query parameter as EventSource doesn't support custom headers
+	if strings.Contains(r.URL.Path, "/events") {
+		if token := r.URL.Query().Get("token"); token != "" {
+			return token, nil
+		}
+		// Also try 'access_token' for RFC compliance
+		if token := r.URL.Query().Get("access_token"); token != "" {
+			return token, nil
+		}
+	}
+
 	return "", fmt.Errorf("authentication token not found")
 }
 
@@ -166,7 +177,7 @@ func (m *PasetoAuthMiddleware) validateToken(tokenString string) (*PasetoTokenCl
 	}
 
 	// Extract claims from token with flexible timestamp parsing
-	var rawClaims map[string]interface{}
+	var rawClaims map[string]any
 	if err := json.Unmarshal(token.ClaimsJSON(), &rawClaims); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal token claims: %w", err)
 	}
@@ -206,7 +217,7 @@ func (m *PasetoAuthMiddleware) validateToken(tokenString string) (*PasetoTokenCl
 
 	// Parse scopes if present
 	if scopes, ok := rawClaims["scopes"]; ok {
-		if scopeSlice, ok := scopes.([]interface{}); ok {
+		if scopeSlice, ok := scopes.([]any); ok {
 			for _, scope := range scopeSlice {
 				if scopeStr, ok := scope.(string); ok {
 					claims.Scopes = append(claims.Scopes, scopeStr)
@@ -290,7 +301,7 @@ func (m *PasetoAuthMiddleware) writeUnauthorizedResponse(w http.ResponseWriter, 
 	timestamp := time.Now()
 	statusCode := http.StatusUnauthorized
 
-	errorResponse := map[string]interface{}{
+	errorResponse := map[string]any{
 		"status_code": statusCode,
 		"error":       errorCode,
 		"message":     message,

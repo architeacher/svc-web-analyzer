@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -25,10 +26,10 @@ type (
 
 	analysisService struct {
 		analysisRepo  ports.AnalysisRepository
-		cacheRepo     ports.CacheRepository
 		outboxRepo    ports.OutboxRepository
+		cacheRepo     ports.CacheRepository
 		healthChecker ports.HealthChecker
-		storageClient *infrastructure.Storage
+		dbConn        *sql.DB
 		sseConfig     config.SSEConfig
 		logger        *infrastructure.Logger
 	}
@@ -36,35 +37,30 @@ type (
 
 func NewApplicationService(
 	analysisRepo ports.AnalysisRepository,
-	cacheRepo ports.CacheRepository,
 	outboxRepo ports.OutboxRepository,
+	cacheRepo ports.CacheRepository,
 	healthChecker ports.HealthChecker,
-	storageClient *infrastructure.Storage,
+	dbConn *sql.DB,
 	sseConfig config.SSEConfig,
 	logger *infrastructure.Logger,
 ) ApplicationService {
 	return analysisService{
 		analysisRepo:  analysisRepo,
-		cacheRepo:     cacheRepo,
 		outboxRepo:    outboxRepo,
+		cacheRepo:     cacheRepo,
 		healthChecker: healthChecker,
-		storageClient: storageClient,
+		dbConn:        dbConn,
 		sseConfig:     sseConfig,
 		logger:        logger,
 	}
 }
 
 func (s analysisService) StartAnalysis(ctx context.Context, url string, options domain.AnalysisOptions) (*domain.Analysis, error) {
-	if s.storageClient == nil {
+	if s.dbConn == nil {
 		return nil, fmt.Errorf("failed to get database connection: storage client not initialized")
 	}
 
-	db, err := s.storageClient.GetDB()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get database connection: %w", err)
-	}
-
-	tx, err := db.BeginTx(ctx, nil)
+	tx, err := s.dbConn.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
@@ -137,21 +133,21 @@ func (s analysisService) FetchAnalysis(ctx context.Context, analysisID string) (
 
 func (s analysisService) FetchAnalysisEvents(ctx context.Context, analysisID string) (<-chan domain.AnalysisEvent, error) {
 	events := make(chan domain.AnalysisEvent, 10)
+	sendEventsChan := make(chan struct{}, 1)
 
 	go func() {
 		defer close(events)
+		defer close(sendEventsChan)
 
-		analysis, err := s.FetchAnalysis(ctx, analysisID)
-		if err != nil {
-			return
-		}
+		keepAliveTicker := time.NewTicker(s.sseConfig.HeartbeatInterval)
+		eventsTicker := time.NewTicker(s.sseConfig.EventsInterval)
+		defer func() {
+			keepAliveTicker.Stop()
+			eventsTicker.Stop()
+		}()
 
-		if !s.sendAnalysisEvent(analysis, events) {
-			return
-		}
-
-		keepAliveTicker := time.NewTicker(s.sseConfig.EventsInterval)
-		defer keepAliveTicker.Stop()
+		// Send the initial event if it has been processed and don't wait for the ticker.
+		sendEventsChan <- struct{}{}
 
 		for {
 			select {
@@ -160,14 +156,26 @@ func (s analysisService) FetchAnalysisEvents(ctx context.Context, analysisID str
 
 				return
 			case <-keepAliveTicker.C:
+				const eventType = "heartbeat"
+				s.sendHeartEvent(eventType, map[string]any{}, events)
+
+			case <-sendEventsChan:
 				analysis, err := s.FetchAnalysis(ctx, analysisID)
 				if err != nil {
 					return
 				}
 
-				if !s.sendAnalysisEvent(analysis, events) {
+				eventType := s.getEventStatus(analysis.Status)
+				if !s.shouldWait(s.getEventStatus(analysis.Status)) {
+					// Analysis completed, give the client more time to receive the event.
+					<-time.After(500 * time.Millisecond)
+					s.sendAnalysisEvent(eventType, analysis, events)
+
 					return
 				}
+
+			case <-eventsTicker.C:
+				sendEventsChan <- struct{}{}
 			}
 		}
 	}()
@@ -175,32 +183,42 @@ func (s analysisService) FetchAnalysisEvents(ctx context.Context, analysisID str
 	return events, nil
 }
 
-func (s analysisService) sendAnalysisEvent(analysis *domain.Analysis, events chan<- domain.AnalysisEvent) bool {
+func (s analysisService) shouldWait(eventType domain.Event) bool {
+	return eventType != domain.EventTypeCompleted && eventType != domain.EventTypeFailed
+}
+
+func (s analysisService) sendAnalysisEvent(
+	eventType domain.Event,
+	analysis *domain.Analysis,
+	events chan<- domain.AnalysisEvent,
+) {
+	events <- domain.AnalysisEvent{
+		Type:    eventType,
+		Payload: analysis,
+		EventID: analysis.ID.String(),
+	}
+}
+
+func (s analysisService) sendHeartEvent(
+	eventType domain.Event,
+	payload any,
+	events chan<- domain.AnalysisEvent,
+) {
+	events <- domain.AnalysisEvent{
+		Type:    eventType,
+		Payload: payload,
+	}
+}
+
+func (s analysisService) getEventStatus(status domain.AnalysisStatus) domain.Event {
 	analysisStatusEventsMap := map[domain.AnalysisStatus]domain.Event{
 		domain.StatusRequested:  domain.EventTypeStarted,
 		domain.StatusInProgress: domain.EventTypeProgress,
 		domain.StatusCompleted:  domain.EventTypeCompleted,
 		domain.StatusFailed:     domain.EventTypeFailed,
 	}
-	keepWaiting := true
 
-	switch analysis.Status {
-	case domain.StatusCompleted, domain.StatusFailed:
-		keepWaiting = false
-	}
-
-	eventType, ok := analysisStatusEventsMap[analysis.Status]
-	if !ok {
-		keepWaiting = false
-	}
-
-	events <- domain.AnalysisEvent{
-		Type:    eventType,
-		Data:    analysis,
-		EventID: analysis.ID.String(),
-	}
-
-	return keepWaiting
+	return analysisStatusEventsMap[status]
 }
 
 func (s analysisService) FetchReadinessReport(ctx context.Context) (*domain.ReadinessResult, error) {

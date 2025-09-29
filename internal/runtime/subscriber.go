@@ -58,6 +58,7 @@ func (w *AnalysisWorker) ProcessMessage(ctx context.Context, msg queue.Message, 
 	var payload domain.AnalysisRequestPayload
 	if err := msg.Unmarshal(&payload); err != nil {
 		w.logger.Error().Err(err).Msg("failed to unmarshal message payload")
+
 		return ctrl.Reject(msg)
 	}
 
@@ -69,6 +70,7 @@ func (w *AnalysisWorker) ProcessMessage(ctx context.Context, msg queue.Message, 
 	if err := w.updateAnalysisStatus(ctx, payload.AnalysisID, domain.StatusInProgress); err != nil {
 		w.logger.Error().Err(err).Str("analysis_id", payload.AnalysisID.String()).
 			Msg("failed to update analysis status to in_progress")
+
 		return ctrl.Requeue(msg)
 	}
 
@@ -78,8 +80,10 @@ func (w *AnalysisWorker) ProcessMessage(ctx context.Context, msg queue.Message, 
 			w.logger.Error().Err(updateErr).Str("analysis_id", payload.AnalysisID.String()).
 				Msg("failed to mark analysis as failed")
 		}
+
 		w.logger.Error().Err(err).Str("analysis_id", payload.AnalysisID.String()).
 			Str("url", payload.URL).Msg("failed to fetch web page")
+
 		return ctrl.Ack(msg)
 	}
 
@@ -102,6 +106,7 @@ func (w *AnalysisWorker) ProcessMessage(ctx context.Context, msg queue.Message, 
 
 func (w *AnalysisWorker) CalculateContentHash(html string) string {
 	hash := sha256.Sum256([]byte(html))
+
 	return hex.EncodeToString(hash[:])
 }
 
@@ -532,6 +537,11 @@ func (c *SubscriberCtx) build() {
 		c.logger.Fatal().Err(err).Msg("Failed to initialize storage")
 	}
 
+	db, err := c.storage.GetDB()
+	if err != nil {
+		c.logger.Fatal().Err(err).Msg("failed to get database connection:")
+	}
+
 	c.cacheClient = infrastructure.NewKeyDBClient(cfg.Cache, c.logger)
 
 	// Test cache connection
@@ -545,7 +555,7 @@ func (c *SubscriberCtx) build() {
 		c.logger.Info().Msg("cache connection established")
 	}
 
-	analysisRepo := adapters.NewPostgresRepository(c.storage)
+	analysisRepo := adapters.NewAnalysisRepository(db)
 	var cacheRepo ports.CacheRepository
 	if c.cacheClient != nil {
 		cacheRepo = adapters.NewCacheRepository(c.cacheClient, cfg.Cache, c.logger)
@@ -571,7 +581,7 @@ func (c *SubscriberCtx) build() {
 	)
 
 	if err := c.queue.Connect(); err != nil {
-		c.logger.Fatal().Err(err).Msg("Failed to connect to RabbitMQ")
+		c.logger.Fatal().Err(err).Msg("failed to connect to RabbitMQ")
 	}
 }
 

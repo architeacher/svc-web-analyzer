@@ -51,7 +51,7 @@ COMMENT ON COLUMN outbox_events.retry_count IS 'Number of retry attempts for fai
 COMMENT ON COLUMN outbox_events.max_retries IS 'Maximum number of retry attempts before permanent failure';
 COMMENT ON COLUMN outbox_events.status IS 'Current processing status of the outbox event';
 COMMENT ON COLUMN outbox_events.payload IS 'JSON payload containing event data for message queue';
-COMMENT ON COLUMN outbox_events.error_details IS 'Error information from failed publishing attempts';
+COMMENT ON COLUMN outbox_events.error_details IS 'Infrastructure error information from failed message publishing attempts (connection errors, serialization failures, queue unavailable)';
 COMMENT ON COLUMN outbox_events.published_at IS 'Timestamp when event was successfully published to queue';
 COMMENT ON COLUMN outbox_events.processing_started_at IS 'Timestamp when event processing began';
 COMMENT ON COLUMN outbox_events.next_retry_at IS 'Timestamp when failed event should be retried';

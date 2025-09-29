@@ -187,7 +187,8 @@ func createTestLogger() *infrastructure.Logger {
 
 func createTestSSEConfig() config.SSEConfig {
 	return config.SSEConfig{
-		EventsInterval: 100 * time.Millisecond, // Faster for tests
+		EventsInterval:    100 * time.Millisecond, // Faster for tests
+		HeartbeatInterval: 100 * time.Millisecond, // Faster for tests
 	}
 }
 
@@ -450,7 +451,7 @@ func TestFetchAnalysisEvents_CompletedAnalysis(t *testing.T) {
 	case event := <-eventsChan:
 		assert.Equal(t, domain.EventTypeCompleted, event.Type)
 		assert.Equal(t, analysisID, event.EventID)
-		assert.Equal(t, expectedAnalysis, event.Data)
+		assert.Equal(t, expectedAnalysis, event.Payload)
 	case <-time.After(1 * time.Second):
 		t.Fatal("Expected to receive an event but got timeout")
 	}
@@ -508,7 +509,7 @@ func TestFetchAnalysisEvents_FailedAnalysis(t *testing.T) {
 	case event := <-eventsChan:
 		assert.Equal(t, domain.EventTypeFailed, event.Type)
 		assert.Equal(t, analysisID, event.EventID)
-		assert.Equal(t, expectedAnalysis, event.Data)
+		assert.Equal(t, expectedAnalysis, event.Payload)
 	case <-time.After(1 * time.Second):
 		t.Fatal("Expected to receive an event but got timeout")
 	}

@@ -81,26 +81,40 @@ The project uses `oapi-codegen` for generating Go code from OpenAPI specificatio
 
 ### Key Features
 
+#### Core Architecture
 - **Event-Driven Architecture**: Publisher/subscriber pattern with outbox implementation for reliable message processing
 - **Clean Architecture**: Ports and adapters pattern with clear separation of concerns
+- **CQRS Pattern**: Command Query Responsibility Segregation with decorator pattern for cross-cutting concerns
+- **Outbox Pattern**: Transactional outbox for guaranteed event publishing and delivery
+- **Three-Service Design**: HTTP API, Publisher, and Subscriber services for scalable processing
+
+#### Backend Implementation
 - **Service Layer**: Application services implementing business logic and orchestration
+- **Repository Pattern**: Concrete implementations for PostgreSQL, KeyDB cache, and Vault secrets
 - **Infrastructure Layer**: Complete implementation with cache, database, secrets, logging, metrics, queue, storage, and tracing
-- **Repository Pattern**: Concrete implementations for PostgreSQL, Redis cache, and Vault secrets
-- **Decorator Pattern**: Cross-cutting concerns implemented using decorators for logging, metrics, tracing, and CQRS commands/queries
 - **Message Queue Integration**: RabbitMQ-based asynchronous processing with reliable delivery
-- **Outbox Pattern**: Transactional outbox for guaranteed event publishing
-- **Comprehensive Testing**: Unit tests for all adapters and services with parallel execution
-- **HTML Analysis**: Complete HTML parsing and analysis with link checking
-- **Web Fetching**: Robust web page fetching with configurable timeouts and headers
-- **Comprehensive Error Handling**: Structured error responses with examples
-- **Real-time Updates**: Server-sent events for analysis progress
-- **Security Headers**: Complete set of security headers implemented
-- **API Versioning**: Multiple versioning strategies supported
-- **Frontend Application**: Modern Vue.js application with TypeScript and Tailwind CSS
-- **Docker Deployment**: Complete containerization setup with Traefik
-- **SSL/TLS**: Local development SSL certificate generation with mkcert
-- **Database Migrations**: Automated database schema management
-- **Configuration Management**: Environment-based configuration with Vault integration
+- **Dependency Injection**: Runtime-based dependency management with configuration
+
+#### API & Communication
+- **RESTful API**: OpenAPI 3.0.3 specification with code generation
+- **Real-time Updates**: Server-Sent Events (SSE) for analysis progress tracking
+- **PASETO Authentication**: Secure token-based authentication with v4 public tokens
+- **API Versioning**: Multiple versioning strategies (URL path, headers, content type)
+- **Security Headers**: Complete set of HTTP security headers
+
+#### Web Analysis Features
+- **HTML Analysis**: Complete HTML parsing with version detection, heading counts, and form analysis
+- **Link Analysis**: Internal/external link identification with accessibility checking
+- **Web Fetching**: Robust web page fetching with configurable timeouts and custom headers
+- **Error Handling**: Comprehensive error handling with structured error responses
+
+#### Development & Operations
+- **Comprehensive Testing**: Unit tests for all adapters and services with parallel execution (testify framework)
+- **Database Migrations**: Automated PostgreSQL schema management with migration versioning
+- **Docker Deployment**: Complete containerization with multi-stage builds and Traefik reverse proxy
+- **SSL/TLS**: Local development SSL certificate generation with mkcert for `*.web-analyzer.dev` domains
+- **Configuration Management**: Environment-based configuration with Vault integration for secrets
+- **Observability**: Structured logging (zerolog), distributed tracing (OpenTelemetry), and metrics collection
 
 ### Module Information
 

@@ -149,9 +149,9 @@ type (
 	}
 
 	AnalysisEvent struct {
-		Type    Event       `json:"type"`
-		Data    interface{} `json:"data"`
-		EventID string      `json:"event_id"`
+		Type    Event  `json:"type"`
+		Payload any    `json:"payload"`
+		EventID string `json:"event_id"`
 	}
 
 	// OutboxEvent domain models
@@ -164,7 +164,7 @@ type (
 		RetryCount          int             `json:"retry_count"`
 		MaxRetries          int             `json:"max_retries"`
 		Status              OutboxStatus    `json:"status"`
-		Payload             interface{}     `json:"payload"`
+		Payload             any             `json:"payload"`
 		ErrorDetails        *string         `json:"error_details,omitempty"`
 		CreatedAt           time.Time       `json:"created_at"`
 		PublishedAt         *time.Time      `json:"published_at,omitempty"`

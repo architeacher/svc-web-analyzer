@@ -13,8 +13,8 @@ import (
 	"github.com/architeacher/svc-web-analyzer/internal/config"
 	"github.com/architeacher/svc-web-analyzer/internal/domain"
 	"github.com/architeacher/svc-web-analyzer/internal/infrastructure"
-	"github.com/architeacher/svc-web-analyzer/pkg/queue"
 	"github.com/architeacher/svc-web-analyzer/internal/ports"
+	"github.com/architeacher/svc-web-analyzer/pkg/queue"
 )
 
 const (
@@ -245,10 +245,15 @@ func (c *PublisherCtx) build() {
 
 	c.storage, err = infrastructure.NewStorage(cfg.Storage)
 	if err != nil {
-		c.logger.Fatal().Err(err).Msg("Failed to initialize storage")
+		c.logger.Fatal().Err(err).Msg("failed to initialize storage")
 	}
 
-	outboxRepo := adapters.NewOutboxRepository(c.storage)
+	db, err := c.storage.GetDB()
+	if err != nil {
+		c.logger.Fatal().Err(err).Msg("failed to get database connection:")
+	}
+
+	outboxRepo := adapters.NewOutboxRepository(db)
 
 	queueConfig := queue.Config{
 		Scheme:   "amqp",

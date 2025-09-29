@@ -98,7 +98,7 @@ CREATE TRIGGER update_analysis_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
--- Trigger to automatically set version
+-- Trigger to automatically set the version.
 CREATE TRIGGER set_analysis_version
     BEFORE INSERT ON analysis
     FOR EACH ROW
@@ -115,6 +115,10 @@ COMMENT ON COLUMN analysis.version IS 'Version number for the same URL (auto-inc
 COMMENT ON COLUMN analysis.lock_version IS 'Version for optimistic concurrency control';
 COMMENT ON COLUMN analysis.options IS 'JSON structure containing analysis options and configuration metadata';
 COMMENT ON COLUMN analysis.results IS 'JSON structure containing analysis data including HTML version, title, heading counts, links, and forms';
+COMMENT ON COLUMN analysis.error_code IS 'Business logic error identifier when webpage analysis fails (e.g., FETCH_ERROR, PARSE_ERROR)';
+COMMENT ON COLUMN analysis.error_message IS 'Human-readable description of business logic failure during webpage analysis';
+COMMENT ON COLUMN analysis.error_status_code IS 'HTTP status code from failed webpage fetch attempt (e.g., 404, 500, timeout)';
+COMMENT ON COLUMN analysis.error_details IS 'Additional context for business logic failures (stack traces, parsing errors, network issues)';
 COMMENT ON COLUMN analysis.started_at IS 'Timestamp when analysis processing started';
 COMMENT ON COLUMN analysis.archived_at IS 'Timestamp when record was archived (soft deletion)';
 COMMENT ON COLUMN analysis.expires_at IS 'Timestamp when record should be automatically cleaned up';
