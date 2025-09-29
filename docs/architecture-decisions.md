@@ -214,6 +214,180 @@ Use HashiCorp Vault as the centralized secret management system for secure stora
 - **Negative**: Additional infrastructure complexity, dependency on Vault availability, learning curve.
 - **Implementation**: Vault cluster with PostgreSQL backend, integrated with application services for dynamic secret retrieval.
 
+## System Architecture Diagrams
+
+### Event-Driven Processing Flow
+
+The system implements an event-driven architecture with the outbox pattern for reliable message processing:
+
+```mermaid
+sequenceDiagram
+    participant Client as Client
+    participant API as HTTP API Service
+    participant DB as PostgreSQL
+    participant Publisher as Publisher Service
+    participant Queue as RabbitMQ
+    participant Subscriber as Subscriber Service
+    participant SSE as SSE Connection
+
+    Note over Client,SSE: Analysis Request Flow
+
+    Client->>API: POST /v1/analyze
+    API->>API: Validate PASETO token
+    API->>DB: Store analysis request
+    API->>DB: Insert outbox event
+    API->>Client: Return analysis_id
+
+    Note over Publisher,Queue: Event Publishing
+
+    Publisher->>DB: Poll outbox events
+    Publisher->>Queue: Publish analysis event
+    Publisher->>DB: Mark event as published
+
+    Note over Queue,Subscriber: Background Processing
+
+    Queue->>Subscriber: Deliver analysis event
+    Subscriber->>Subscriber: Fetch & analyze webpage
+    Subscriber->>DB: Update analysis status
+    Subscriber->>DB: Store analysis results
+
+    Note over Client,SSE: Real-time Updates
+
+    Client->>API: GET /v1/analysis/{id}/events
+    API->>SSE: Establish SSE connection
+    loop Progress Updates
+        Subscriber->>DB: Update progress
+        API->>SSE: Send progress event
+        SSE->>Client: Stream progress data
+    end
+
+    Client->>API: GET /v1/analysis/{id}
+    API->>DB: Fetch completed results
+    API->>Client: Return analysis data
+```
+
+### Service Communication Patterns
+
+#### 1. Request-Response Pattern (Synchronous)
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API as HTTP API Service
+    participant Auth as Authentication
+    participant DB as PostgreSQL
+
+    Client->>API: HTTP Request + PASETO Token
+    API->>Auth: Validate Token
+    Auth-->>API: Token Valid
+    API->>DB: Query/Store Data
+    DB-->>API: Data Response
+    API->>Client: HTTP Response
+```
+
+#### 2. Event-Driven Pattern (Asynchronous)
+
+```mermaid
+sequenceDiagram
+    participant API as HTTP API Service
+    participant DB as PostgreSQL (Outbox)
+    participant Publisher as Publisher Service
+    participant Queue as RabbitMQ
+    participant Subscriber as Subscriber Service
+
+    Note over API,Subscriber: Transactional Outbox Pattern
+
+    API->>DB: BEGIN TRANSACTION
+    API->>DB: INSERT analysis_request
+    API->>DB: INSERT outbox_event
+    API->>DB: COMMIT TRANSACTION
+
+    loop Polling Cycle
+        Publisher->>DB: SELECT unpublished events
+        Publisher->>Queue: PUBLISH event
+        Publisher->>DB: UPDATE event status
+    end
+
+    Queue->>Subscriber: DELIVER event
+    Subscriber->>Subscriber: PROCESS analysis
+    Subscriber->>DB: UPDATE results
+```
+
+### Data Flow Architecture
+
+```mermaid
+flowchart TD
+    A[Client Request] --> B[HTTP API Service]
+    B --> C{Authentication}
+    C -->|Valid Token| D[Request Validation]
+    C -->|Invalid Token| E[401 Unauthorized]
+
+    D --> F[PostgreSQL Storage]
+    F --> G[Outbox Event]
+
+    G --> H[Publisher Service]
+    H --> I[RabbitMQ Queue]
+
+    I --> J[Subscriber Service]
+    J --> K[Web Page Fetching]
+    K --> L[HTML Analysis]
+    L --> M[Result Storage]
+
+    M --> N[Real-time Updates]
+    N --> O[SSE Stream]
+    O --> P[Client Progress]
+
+    F --> Q[Result Retrieval]
+    Q --> R[Client Response]
+
+    style B fill:#e1f5fe
+    style H fill:#f3e5f5
+    style J fill:#e8f5e8
+    style F fill:#fff3e0
+```
+
+### Component Architecture
+
+```mermaid
+graph TB
+    subgraph "HTTP API Service"
+        A[HTTP Handlers] --> B[Authentication Middleware]
+        B --> C[Application Service]
+        C --> D[Domain Logic]
+        D --> E[Repository Interface]
+    end
+
+    subgraph "Publisher Service"
+        F[Event Polling] --> G[Message Publishing]
+        G --> H[Queue Interface]
+    end
+
+    subgraph "Subscriber Service"
+        I[Message Consumer] --> J[Analysis Engine]
+        J --> K[Web Fetcher]
+        K --> L[HTML Parser]
+    end
+
+    subgraph "Infrastructure"
+        M[PostgreSQL]
+        N[RabbitMQ]
+        O[KeyDB Cache]
+        P[Vault Secrets]
+    end
+
+    E --> M
+    H --> N
+    I --> N
+    C --> O
+    F --> M
+    J --> M
+
+    style A fill:#e3f2fd
+    style F fill:#f1f8e9
+    style I fill:#fce4ec
+    style M fill:#fff8e1
+```
+
 ## Future Considerations
 
 ### Potential Future ADRs
@@ -221,3 +395,6 @@ Use HashiCorp Vault as the centralized secret management system for secure stora
 - **Microservices Architecture**: If the application grows beyond a monolith.
 - **Kubernetes Deployment**: When container orchestration is needed.
 - **Monitoring and Observability**: Comprehensive monitoring strategy.
+- **Circuit Breaker Pattern**: For resilient external service calls.
+- **Event Sourcing**: Full event sourcing implementation for audit trails.
+- **CQRS Enhancement**: Separate read/write models for scalability.

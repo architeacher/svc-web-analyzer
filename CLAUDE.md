@@ -28,7 +28,9 @@ svc-web-analyzer/
 │   ├── mk/                           # Make-based build system (Makefile, utils, config)
 │   └── oapi/                         # OpenAPI code generation config
 ├── cmd/                              # Application entry points
-│   └── svc-web-analyzer/             # Main application entry point
+│   ├── publisher/                    # Publisher service entry point
+│   ├── subscriber/                   # Subscriber service entry point
+│   └── svc-web-analyzer/             # Main HTTP API service entry point
 ├── deployments/                      # Deployment configurations
 │   └── docker/                       # Docker deployment setup (Dockerfile, services config)
 ├── docs/                             # Documentation and specifications
@@ -41,6 +43,9 @@ svc-web-analyzer/
 │   ├── infrastructure/               # Infrastructure implementations (cache, logger, metrics, etc.)
 │   ├── ports/                        # Interface definitions (clean architecture)
 │   ├── runtime/                      # Application bootstrap and dependency injection
+│   │   ├── dispatcher.go             # HTTP server runtime dispatcher
+│   │   ├── publisher.go              # Publisher service runtime
+│   │   └── subscriber.go             # Subscriber service runtime
 │   ├── service/                      # Application service layer
 │   ├── shared/                       # Shared cross-cutting concerns (decorators)
 │   ├── tools/                        # Code generation tools
@@ -76,11 +81,14 @@ The project uses `oapi-codegen` for generating Go code from OpenAPI specificatio
 
 ### Key Features
 
+- **Event-Driven Architecture**: Publisher/subscriber pattern with outbox implementation for reliable message processing
 - **Clean Architecture**: Ports and adapters pattern with clear separation of concerns
 - **Service Layer**: Application services implementing business logic and orchestration
 - **Infrastructure Layer**: Complete implementation with cache, database, secrets, logging, metrics, queue, storage, and tracing
 - **Repository Pattern**: Concrete implementations for PostgreSQL, Redis cache, and Vault secrets
 - **Decorator Pattern**: Cross-cutting concerns implemented using decorators for logging, metrics, tracing, and CQRS commands/queries
+- **Message Queue Integration**: RabbitMQ-based asynchronous processing with reliable delivery
+- **Outbox Pattern**: Transactional outbox for guaranteed event publishing
 - **Comprehensive Testing**: Unit tests for all adapters and services with parallel execution
 - **HTML Analysis**: Complete HTML parsing and analysis with link checking
 - **Web Fetching**: Robust web page fetching with configurable timeouts and headers
@@ -116,9 +124,65 @@ The project uses `oapi-codegen` for generating Go code from OpenAPI specificatio
 
 ### Architecture Patterns
 
+- **Event-Driven Architecture**: Asynchronous message-based communication between services
+- **Outbox Pattern**: Transactional outbox for reliable event publishing and delivery
+- **Publisher/Subscriber**: Decoupled services communicating through message queues
 - **Clean Architecture**: Ports and adapters pattern with clear separation of concerns
 - **CQRS (Command Query Responsibility Segregation)**: Separate command and query handlers
 - **Decorator Pattern**: Cross-cutting concerns for logging, metrics, tracing
 - **Dependency Injection**: Runtime dependency management and configuration
 - **Repository Pattern**: Data access abstraction with multiple implementations
 - **Middleware Chain**: HTTP request processing pipeline with security, validation, and tracing
+
+### Service Architecture
+
+The application consists of three main services:
+
+#### 1. HTTP API Service (`cmd/svc-web-analyzer/`)
+- **Purpose**: RESTful API endpoints for web page analysis requests
+- **Port**: 8080 (https://api.web-analyzer.dev/v1/)
+- **Runtime**: `internal/runtime/dispatcher.go`
+- **Responsibilities**:
+  - Handle HTTP requests for analysis submission
+  - Authenticate requests using PASETO tokens
+  - Store analysis requests in PostgreSQL
+  - Publish events to outbox table for processing
+  - Provide real-time updates via Server-Sent Events (SSE)
+
+#### 2. Publisher Service (`cmd/publisher/`)
+- **Purpose**: Event publishing and outbox pattern implementation
+- **Runtime**: `internal/runtime/publisher.go`
+- **Responsibilities**:
+  - Monitor outbox events table for new analysis requests
+  - Publish events to RabbitMQ message queue
+  - Ensure reliable event delivery with transactional outbox pattern
+  - Handle event retries and error scenarios
+  - Mark events as published after successful delivery
+
+#### 3. Subscriber Service (`cmd/subscriber/`)
+- **Purpose**: Asynchronous web page analysis processing
+- **Runtime**: `internal/runtime/subscriber.go`
+- **Responsibilities**:
+  - Consume analysis events from RabbitMQ
+  - Perform actual web page fetching and analysis
+  - Update analysis status and results in PostgreSQL
+  - Emit progress events for real-time updates
+  - Handle processing errors and retries
+
+### Event Flow
+
+```
+HTTP API → PostgreSQL → Publisher → RabbitMQ → Subscriber → PostgreSQL
+    ↓        (outbox)                                        ↓
+Analysis                                               Analysis
+Request                                               Processing
+    ↓                                                       ↓
+SSE Updates ←─────────────────────────────────── Status Updates
+```
+
+**Benefits:**
+- **Scalability**: Services can be scaled independently based on load
+- **Reliability**: Transactional outbox ensures no message loss
+- **Separation of Concerns**: Clear boundaries between request handling and processing
+- **Resilience**: Asynchronous processing with retry capabilities
+- **Performance**: Non-blocking request handling with background processing

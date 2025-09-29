@@ -107,7 +107,9 @@ func initializeDependencies(ctx context.Context) (*Dependencies, error) {
 			cfg.Cache,
 			appLogger,
 		),
+		adapters.NewOutboxRepository(storage),
 		adapters.NewHealthChecker(),
+		storage,
 		cfg.SSE,
 		appLogger,
 	)

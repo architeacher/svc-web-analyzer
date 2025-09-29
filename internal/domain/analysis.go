@@ -28,14 +28,33 @@ const (
 	EventTypeProgress  Event = "analysis_progress"
 	EventTypeCompleted Event = "analysis_completed"
 	EventTypeFailed    Event = "analysis_failed"
+
+	// Outbox status constants
+	OutboxStatusPending    OutboxStatus = "pending"
+	OutboxStatusProcessing OutboxStatus = "processing"
+	OutboxStatusPublished  OutboxStatus = "published"
+	OutboxStatusFailed     OutboxStatus = "failed"
+
+	// Priority constants
+	PriorityLow    Priority = "low"
+	PriorityNormal Priority = "normal"
+	PriorityHigh   Priority = "high"
+	PriorityUrgent Priority = "urgent"
+
+	// Outbox event types
+	OutboxEventAnalysisRequested OutboxEventType = "analysis.requested"
+	OutboxEventAnalysisRetry     OutboxEventType = "analysis.retry"
 )
 
 type (
-	AnalysisStatus string
-	HTMLVersion    string
-	LinkType       string
-	FormMethod     string
-	Event          string
+	AnalysisStatus  string
+	HTMLVersion     string
+	LinkType        string
+	FormMethod      string
+	Event           string
+	OutboxStatus    string
+	Priority        string
+	OutboxEventType string
 
 	Analysis struct {
 		ID          uuid.UUID      `json:"analysis_id"`
@@ -133,5 +152,32 @@ type (
 		Type    Event       `json:"type"`
 		Data    interface{} `json:"data"`
 		EventID string      `json:"event_id"`
+	}
+
+	// OutboxEvent domain models
+	OutboxEvent struct {
+		ID                  uuid.UUID       `json:"id"`
+		AggregateID         uuid.UUID       `json:"aggregate_id"`
+		AggregateType       string          `json:"aggregate_type"`
+		EventType           OutboxEventType `json:"event_type"`
+		Priority            Priority        `json:"priority"`
+		RetryCount          int             `json:"retry_count"`
+		MaxRetries          int             `json:"max_retries"`
+		Status              OutboxStatus    `json:"status"`
+		Payload             interface{}     `json:"payload"`
+		ErrorDetails        *string         `json:"error_details,omitempty"`
+		CreatedAt           time.Time       `json:"created_at"`
+		PublishedAt         *time.Time      `json:"published_at,omitempty"`
+		ProcessingStartedAt *time.Time      `json:"processing_started_at,omitempty"`
+		NextRetryAt         *time.Time      `json:"next_retry_at,omitempty"`
+	}
+
+	// AnalysisRequestPayload represents the payload for analysis request events
+	AnalysisRequestPayload struct {
+		AnalysisID uuid.UUID       `json:"analysis_id"`
+		URL        string          `json:"url"`
+		Options    AnalysisOptions `json:"options"`
+		Priority   Priority        `json:"priority"`
+		CreatedAt  time.Time       `json:"created_at"`
 	}
 )

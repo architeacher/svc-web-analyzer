@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/architeacher/svc-web-analyzer/internal/config"
 	"github.com/architeacher/svc-web-analyzer/internal/domain"
 	"github.com/architeacher/svc-web-analyzer/internal/infrastructure"
@@ -24,7 +26,9 @@ type (
 	analysisService struct {
 		analysisRepo  ports.AnalysisRepository
 		cacheRepo     ports.CacheRepository
+		outboxRepo    ports.OutboxRepository
 		healthChecker ports.HealthChecker
+		storageClient *infrastructure.Storage
 		sseConfig     config.SSEConfig
 		logger        *infrastructure.Logger
 	}
@@ -33,28 +37,82 @@ type (
 func NewApplicationService(
 	analysisRepo ports.AnalysisRepository,
 	cacheRepo ports.CacheRepository,
+	outboxRepo ports.OutboxRepository,
 	healthChecker ports.HealthChecker,
+	storageClient *infrastructure.Storage,
 	sseConfig config.SSEConfig,
 	logger *infrastructure.Logger,
 ) ApplicationService {
 	return analysisService{
 		analysisRepo:  analysisRepo,
 		cacheRepo:     cacheRepo,
+		outboxRepo:    outboxRepo,
 		healthChecker: healthChecker,
+		storageClient: storageClient,
 		sseConfig:     sseConfig,
 		logger:        logger,
 	}
 }
 
 func (s analysisService) StartAnalysis(ctx context.Context, url string, options domain.AnalysisOptions) (*domain.Analysis, error) {
-	analysis, err := s.analysisRepo.Save(ctx, url, options)
-	if err != nil {
-		return nil, err
+	if s.storageClient == nil {
+		return nil, fmt.Errorf("failed to get database connection: storage client not initialized")
 	}
 
+	db, err := s.storageClient.GetDB()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get database connection: %w", err)
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	analysis, err := s.analysisRepo.SaveInTx(tx, url, options)
+	if err != nil {
+		return nil, fmt.Errorf("failed to save analysis: %w", err)
+	}
+
+	outboxEvent := &domain.OutboxEvent{
+		ID:            uuid.New(),
+		AggregateID:   analysis.ID,
+		AggregateType: "analysis",
+		EventType:     domain.OutboxEventAnalysisRequested,
+		Priority:      domain.PriorityNormal,
+		RetryCount:    0,
+		MaxRetries:    3,
+		Status:        domain.OutboxStatusPending,
+		Payload: domain.AnalysisRequestPayload{
+			AnalysisID: analysis.ID,
+			URL:        url,
+			Options:    options,
+			Priority:   domain.PriorityNormal,
+			CreatedAt:  analysis.CreatedAt,
+		},
+		CreatedAt: analysis.CreatedAt,
+	}
+
+	if err := s.outboxRepo.SaveInTx(tx, outboxEvent); err != nil {
+		return nil, fmt.Errorf("failed to save outbox event: %w", err)
+	}
+
+	// Commit transaction - ensures atomicity of analysis + outbox event
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	// Cache the analysis (fire-and-forget, not part of transaction)
 	if cacheErr := s.cacheRepo.Set(ctx, analysis); cacheErr != nil {
 		s.logger.Error().Err(cacheErr).Msg("failed to save analysis to the cache")
 	}
+
+	s.logger.Info().
+		Str("analysis_id", analysis.ID.String()).
+		Str("url", url).
+		Str("outbox_event_id", outboxEvent.ID.String()).
+		Msg("Successfully created analysis and outbox event")
 
 	return analysis, nil
 }
@@ -70,7 +128,6 @@ func (s analysisService) FetchAnalysis(ctx context.Context, analysisID string) (
 		return nil, fmt.Errorf("failed to find analysis: %w", err)
 	}
 
-	// Cache the result for future requests
 	if cacheErr := s.cacheRepo.Set(ctx, analysis); cacheErr != nil {
 		s.logger.Error().Err(cacheErr).Msg("failed to save analysis to the cache")
 	}
@@ -84,7 +141,6 @@ func (s analysisService) FetchAnalysisEvents(ctx context.Context, analysisID str
 	go func() {
 		defer close(events)
 
-		// Check the analysis status immediately
 		analysis, err := s.FetchAnalysis(ctx, analysisID)
 		if err != nil {
 			return

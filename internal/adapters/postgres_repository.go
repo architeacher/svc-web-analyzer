@@ -150,7 +150,6 @@ func (r PostgresRepository) Save(ctx context.Context, url string, options domain
 		return nil, fmt.Errorf("failed to normalize URL: %w", err)
 	}
 
-	// Create new analysis from parameters
 	analysis := &domain.Analysis{
 		ID:        uuid.New(),
 		URL:       url,
@@ -177,6 +176,52 @@ func (r PostgresRepository) Save(ctx context.Context, url string, options domain
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to save analysis: %w", err)
+	}
+
+	return analysis, nil
+}
+
+// SaveInTx saves an analysis within a transaction for the outbox pattern
+func (r PostgresRepository) SaveInTx(tx *sql.Tx, url string, options domain.AnalysisOptions) (*domain.Analysis, error) {
+	// Normalize the URL
+	normalizedURL, err := normalizeURL(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to normalize URL: %w", err)
+	}
+
+	analysis := &domain.Analysis{
+		ID:        uuid.New(),
+		URL:       url,
+		Status:    domain.StatusRequested,
+		CreatedAt: time.Now(),
+	}
+
+	// Marshal options to JSON for storage
+	optionsJSON, err := json.Marshal(options)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal options: %w", err)
+	}
+
+	query := `
+		INSERT INTO analysis (
+			id, url, url_normalized, status, options, created_at
+		) VALUES (
+			$1, $2, $3, $4, $5, $6
+		)
+		RETURNING id, created_at
+	`
+
+	err = tx.QueryRow(query,
+		analysis.ID,
+		analysis.URL,
+		normalizedURL,
+		analysis.Status,
+		optionsJSON,
+		analysis.CreatedAt,
+	).Scan(&analysis.ID, &analysis.CreatedAt)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to save analysis in transaction: %w", err)
 	}
 
 	return analysis, nil

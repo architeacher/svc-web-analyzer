@@ -2,6 +2,8 @@ package ports
 
 import (
 	"context"
+	"database/sql"
+	"time"
 
 	"github.com/architeacher/svc-web-analyzer/internal/domain"
 )
@@ -17,6 +19,11 @@ type (
 		Save(ctx context.Context, url string, options domain.AnalysisOptions) (*domain.Analysis, error)
 	}
 
+	// TransactionalSaver saves an entry in the database within a transaction.
+	TransactionalSaver interface {
+		SaveInTx(tx *sql.Tx, url string, options domain.AnalysisOptions) (*domain.Analysis, error)
+	}
+
 	// Updater updates an entry or entries in the database.
 	Updater interface {
 		Update(ctx context.Context, url string, options domain.AnalysisOptions) error
@@ -30,5 +37,30 @@ type (
 	AnalysisRepository interface {
 		Finder
 		Saver
+		TransactionalSaver
+	}
+
+	// OutboxRepository handles outbox events for reliable message delivery
+	OutboxRepository interface {
+		// SaveInTx saves an outbox event within a transaction
+		SaveInTx(tx *sql.Tx, event *domain.OutboxEvent) error
+
+		// FindPending finds pending outbox events ordered by priority and creation time
+		FindPending(ctx context.Context, limit int) ([]*domain.OutboxEvent, error)
+
+		// FindRetryable finds failed events that are ready for retry
+		FindRetryable(ctx context.Context, limit int) ([]*domain.OutboxEvent, error)
+
+		// ClaimForProcessing atomically claims an event for processing
+		ClaimForProcessing(ctx context.Context, eventID string) (*domain.OutboxEvent, error)
+
+		// MarkPublished marks an event as successfully published
+		MarkPublished(ctx context.Context, eventID string) error
+
+		// MarkFailed marks an event as failed with error details and retry timing
+		MarkFailed(ctx context.Context, eventID string, errorDetails string, nextRetryAt *time.Time) error
+
+		// MarkPermanentlyFailed marks an event as permanently failed after max retries
+		MarkPermanentlyFailed(ctx context.Context, eventID string, errorDetails string) error
 	}
 )

@@ -116,8 +116,8 @@ type (
 		Username       string        `envconfig:"RABBITMQ_USERNAME" default:"admin"`
 		Password       string        `envconfig:"RABBITMQ_PASSWORD" default:"bottom.Secret"`
 		VirtualHost    string        `envconfig:"RABBITMQ_VIRTUAL_HOST" default:"/"`
-		ExchangeName   string        `envconfig:"RABBITMQ_EXCHANGE_NAME" default:"web_analyzer"`
-		RoutingKey     string        `envconfig:"RABBITMQ_ROUTING_KEY" default:"analysis.request"`
+		ExchangeName   string        `envconfig:"RABBITMQ_EXCHANGE_NAME" default:"web-analyzer"`
+		RoutingKey     string        `envconfig:"RABBITMQ_ROUTING_KEY" default:"analysis.*"`
 		QueueName      string        `envconfig:"RABBITMQ_NAME" default:"analysis_queue"`
 		ConnectTimeout time.Duration `envconfig:"RABBITMQ_CONNECT_TIMEOUT" default:"10s"`
 		Heartbeat      time.Duration `envconfig:"RABBITMQ_HEARTBEAT" default:"10s"`

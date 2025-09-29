@@ -17,7 +17,9 @@ A comprehensive web application that analyzes web pages and provides detailed in
 - **Secure API**: [PASETO](https://paseto.io/) token authentication with comprehensive security headers
 - **Multiple API Versioning**: URL path, header, and content type versioning strategies
 - **Complete Backend Implementation**: Fully functional Go backend with clean architecture
+- **Event-Driven Architecture**: Publisher/subscriber pattern with outbox pattern implementation
 - **CQS Pattern**: Command Query Separation with decorators
+- **Message Queue Integration**: RabbitMQ-based asynchronous processing
 - **Comprehensive Middleware**: Security, rate limiting, tracing, validation, and authentication
 - **Production Ready**: Full dependency injection, configuration management, and runtime dispatcher
 
@@ -35,40 +37,9 @@ For complete feature documentation, see [Features Documentation](docs/features.m
 
 ## Architecture
 
-This project implements a **code-first API design** approach with comprehensive OpenAPI specification and generated server code.
+This project implements an **event-driven microservices architecture** with clean architecture principles, featuring three main services that communicate through message queues and shared data storage.
 
-### Project Structure
-
-```
-svc-web-analyzer/
-├── assets/                           # Project assets and branding
-├── build/                            # Build system and configuration
-│   ├── mk/                           # Make-based build system (Makefile, utils, config)
-│   └── oapi/                         # OpenAPI code generation config
-├── cmd/                              # Application entry points
-│   └── svc-web-analyzer/             # Main application entry point
-├── deployments/                      # Deployment configurations
-│   └── docker/                       # Docker deployment setup (Dockerfile, services config)
-├── docs/                             # Documentation and specifications
-│   └── openapi-spec/                 # OpenAPI 3.0.3 specification (schemas, examples, public docs)
-├── internal/                         # Private application packages
-│   ├── adapters/                     # Infrastructure adapters (middleware, repositories, services)
-│   ├── config/                       # Configuration management
-│   ├── domain/                       # Domain models and business logic
-│   ├── handlers/                     # HTTP handlers implementation
-│   ├── infrastructure/               # Infrastructure implementations (cache, logger, metrics, etc.)
-│   ├── ports/                        # Interface definitions (clean architecture)
-│   ├── runtime/                      # Application bootstrap and dependency injection
-│   ├── service/                      # Application service layer
-│   ├── shared/                       # Shared cross-cutting concerns (decorators)
-│   ├── tools/                        # Code generation tools
-│   └── usecases/                     # Application use cases (CQRS commands/queries)
-├── migrations/                       # Database migration files
-├── scripts/                          # Build and utility scripts
-├── compose.yaml                      # Docker Compose multi-service configuration
-├── go.mod                            # Go module definition and dependencies
-└── go.sum                            # Go module checksums for dependency verification
-```
+For detailed architecture information, see [Architecture Decisions](docs/architecture-decisions.md).
 
 ## Technology Stack
 
@@ -80,14 +51,17 @@ svc-web-analyzer/
 - **Build System**: Make with modular build configuration
 - **Database**: PostgreSQL with lib/pq driver and migrations
 - **Cache**: KeyDB with go-redis client
+- **Message Queue**: RabbitMQ with AMQP 0.9.1 protocol
+- **Event Sourcing**: Outbox pattern with PostgreSQL event store
 - **Logging**: Structured logging with zerolog
 - **Testing**: Testify framework with parallel execution and comprehensive coverage
 - **Observability**: OpenTelemetry for distributed tracing and metrics
 - **Secret Management**: HashiCorp Vault integration
 - **Configuration**: Environment-based configuration with envconfig
-- **Architecture**: Clean architecture with ports/adapters, CQS, and dependency injection
+- **Architecture**: Clean architecture with ports/adapters, CQS, event-driven design, and dependency injection
 - **Middleware**: Complete middleware stack (security, auth, validation, rate limiting, tracing)
 - **Runtime**: Production-ready application dispatcher with graceful shutdown
+- **Services**: Separate publisher and subscriber services for scalable message processing
 
 ### API Design
 - **Specification**: OpenAPI 3.0.3 with detailed schemas and examples
@@ -226,6 +200,14 @@ make default
 make study
 ```
 
+### Three-Service Architecture
+
+1. **HTTP API Service**: Handles REST endpoints and real-time updates
+2. **Publisher Service**: Manages event publishing with outbox pattern
+3. **Subscriber Service**: Processes web page analysis asynchronously
+
+For detailed service architecture and communication patterns, see [Architecture Decisions](docs/architecture-decisions.md).
+
 ## API Documentation
 
 The API is fully documented using OpenAPI 3.0.3 specification with comprehensive examples.
@@ -284,35 +266,33 @@ curl -s https://api.web-analyzer.dev/v1/health | jq
 curl https://api.web-analyzer.dev/v1/analyze \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer v4.public.eyJhdWQiOiJ3ZWItYW5hbHl6ZXItYXBpIiwiZXhwIjoiMjA2My0wOS0xOFQwMjoyMDoxNyswMjowMCIsImlhdCI6IjIwMjUtMDktMjdUMDI6MjA6MTcrMDI6MDAiLCJpc3MiOiJ3ZWItYW5hbHl6ZXItc2VydmljZSIsImp0aSI6InByb3Blci1wYXNldG8tdjQtdG9rZW4iLCJuYmYiOiIyMDI1LTA5LTI3VDAyOjIwOjE3KzAyOjAwIiwic2NvcGVzIjpbImFuYWx5emUiLCJyZWFkIl0sInN1YiI6InRlc3QtdXNlciJ9MVH2eMTu9jMw6ZUIB538m-4gUoonWUbkHPDReqzD_2lojhtO2d1l3FXc6RCOozfW3fIdbU9y9SWAzBBamKydAQ" \
-  -d '{
-        "url": "https://github.com/login"
-  }' | jq
+  -d '{"url": "https://github.com/login"}' | jq
 ```
 
 **Response:**
 ```json
 {
-  "analysis_id": "52d22202-b31c-498f-855d-c1effd079ec1",
+  "analysis_id": "50192680-b80f-49b8-855f-8a525b08ef72",
   "url": "https://github.com/login",
   "status": "requested",
-  "created_at": "2025-09-28T16:09:49.353077Z"
+  "created_at": "2025-09-29T00:48:44.65406Z"
 }
 ```
 
 #### Get Analysis Result
 
 ```bash
-curl https://api.web-analyzer.dev/v1/analysis/52d22202-b31c-498f-855d-c1effd079ec1 \
+curl https://api.web-analyzer.dev/v1/analysis/50192680-b80f-49b8-855f-8a525b08ef72 \
   -H "Authorization: Bearer v4.public.eyJhdWQiOiJ3ZWItYW5hbHl6ZXItYXBpIiwiZXhwIjoiMjA2My0wOS0xOFQwMjoyMDoxNyswMjowMCIsImlhdCI6IjIwMjUtMDktMjdUMDI6MjA6MTcrMDI6MDAiLCJpc3MiOiJ3ZWItYW5hbHl6ZXItc2VydmljZSIsImp0aSI6InByb3Blci1wYXNldG8tdjQtdG9rZW4iLCJuYmYiOiIyMDI1LTA5LTI3VDAyOjIwOjE3KzAyOjAwIiwic2NvcGVzIjpbImFuYWx5emUiLCJyZWFkIl0sInN1YiI6InRlc3QtdXNlciJ9MVH2eMTu9jMw6ZUIB538m-4gUoonWUbkHPDReqzD_2lojhtO2d1l3FXc6RCOozfW3fIdbU9y9SWAzBBamKydAQ" | jq
 ```
 
 **Response (Analysis Requested):**
 ```json
 {
-  "analysis_id": "52d22202-b31c-498f-855d-c1effd079ec1",
+  "analysis_id": "50192680-b80f-49b8-855f-8a525b08ef72",
   "url": "https://github.com/login",
   "status": "requested",
-  "created_at": "2025-09-28T16:09:49.353077Z"
+  "created_at": "2025-09-29T00:48:44.65406Z"
 }
 ```
 
@@ -326,7 +306,7 @@ The API provides real-time progress updates for analysis operations through Serv
 
 **Example Request:**
 ```bash
-curl https://api.web-analyzer.dev/v1/analysis/52d22202-b31c-498f-855d-c1effd079ec1/events \
+curl https://api.web-analyzer.dev/v1/analysis/50192680-b80f-49b8-855f-8a525b08ef72/events \
   -H "Authorization: Bearer v4.public.eyJhdWQiOiJ3ZWItYW5hbHl6ZXItYXBpIiwiZXhwIjoiMjA2My0wOS0xOFQwMjoyMDoxNyswMjowMCIsImlhdCI6IjIwMjUtMDktMjdUMDI6MjA6MTcrMDI6MDAiLCJpc3MiOiJ3ZWItYW5hbHl6ZXItc2VydmljZSIsImp0aSI6InByb3Blci1wYXNldG8tdjQtdG9rZW4iLCJuYmYiOiIyMDI1LTA5LTI3VDAyOjIwOjE3KzAyOjAwIiwic2NvcGVzIjpbImFuYWx5emUiLCJyZWFkIl0sInN1YiI6InRlc3QtdXNlciJ9MVH2eMTu9jMw6ZUIB538m-4gUoonWUbkHPDReqzD_2lojhtO2d1l3FXc6RCOozfW3fIdbU9y9SWAzBBamKydAQ" \
   -H "Accept: text/event-stream"
 ```

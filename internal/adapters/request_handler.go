@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/architeacher/svc-web-analyzer/internal/domain"
 	"github.com/architeacher/svc-web-analyzer/internal/handlers"
 	"github.com/architeacher/svc-web-analyzer/internal/infrastructure"
 	"github.com/architeacher/svc-web-analyzer/internal/usecases"
@@ -30,24 +31,24 @@ func NewRequestHandler(
 
 // AnalyzeURL implements ServerInterface.AnalyzeURL
 func (h *RequestHandler) AnalyzeURL(w http.ResponseWriter, r *http.Request, params handlers.AnalyzeURLParams) {
-	// Parse the request body
 	var req handlers.AnalyzeURLJSONRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.writeErrorResponse(w, http.StatusBadRequest, "bad_request", "Invalid request body", err.Error())
 		return
 	}
 
-	// Validate required URL field
 	if req.Url == "" {
 		h.writeErrorResponse(w, http.StatusBadRequest, "bad_request", "URL is required", "url field cannot be empty")
 		return
 	}
 
-	// Execute command
+	options := h.mapRequestOptionsToDomainOptions(req.Options)
+
 	result, err := h.app.Commands.AnalyzeCommandHandler.Handle(
 		r.Context(),
 		commands.AnalyzeCommand{
-			URL: req.Url,
+			URL:     req.Url,
+			Options: options,
 		},
 	)
 	if err != nil {
@@ -55,7 +56,6 @@ func (h *RequestHandler) AnalyzeURL(w http.ResponseWriter, r *http.Request, para
 		return
 	}
 
-	// Write the success response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(result)
@@ -63,7 +63,6 @@ func (h *RequestHandler) AnalyzeURL(w http.ResponseWriter, r *http.Request, para
 
 // GetAnalysis implements ServerInterface.GetAnalysis
 func (h *RequestHandler) GetAnalysis(w http.ResponseWriter, r *http.Request, analysisId openapi_types.UUID, params handlers.GetAnalysisParams) {
-	// Execute query
 	result, err := h.app.Queries.FetchAnalysisQueryHandler.Execute(
 		r.Context(),
 		queries.FetchAnalysisQuery{AnalysisID: analysisId.String()},
@@ -87,7 +86,6 @@ func (h *RequestHandler) GetAnalysis(w http.ResponseWriter, r *http.Request, ana
 
 // GetAnalysisEvents implements ServerInterface.GetAnalysisEvents
 func (h *RequestHandler) GetAnalysisEvents(w http.ResponseWriter, r *http.Request, analysisId openapi_types.UUID, params handlers.GetAnalysisEventsParams) {
-	// Middleware SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -95,7 +93,6 @@ func (h *RequestHandler) GetAnalysisEvents(w http.ResponseWriter, r *http.Reques
 	w.Header().Set("Access-Control-Allow-Headers", "CacheClient-Control")
 	w.WriteHeader(http.StatusOK)
 
-	// Check if a response writer supports flushing
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		h.writeErrorResponse(w, http.StatusInternalServerError, "internal_server_error", "Streaming not supported", "response writer does not support flushing")
@@ -103,13 +100,11 @@ func (h *RequestHandler) GetAnalysisEvents(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Execute SSE query
 	events, err := h.app.Queries.FetchAnalysisEventsQueryHandler.Execute(
 		r.Context(),
 		queries.FetchAnalysisEventsQuery{AnalysisID: analysisId.String()},
 	)
 	if err != nil {
-		// Write error as SSE event
 		w.Write([]byte("event: error\n"))
 		w.Write([]byte("data: {\"error\": \"failed to fetch events\"}\n\n"))
 		flusher.Flush()
@@ -119,7 +114,6 @@ func (h *RequestHandler) GetAnalysisEvents(w http.ResponseWriter, r *http.Reques
 
 	flusher.Flush()
 
-	// Write events as SSE stream
 	for event := range events {
 		select {
 		case <-r.Context().Done():
@@ -146,7 +140,6 @@ func (h *RequestHandler) ReadinessCheck(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Create the readiness response
 	readinessResp := handlers.ReadinessResponse{
 		Status:    readinessResult.OverallStatus,
 		Timestamp: now,
@@ -204,7 +197,6 @@ func (h *RequestHandler) LivenessCheck(w http.ResponseWriter, r *http.Request) {
 		Version:   "1.0.0",
 	}
 
-	// Middleware appropriate HTTP status code
 	statusCode := http.StatusOK
 	if livenessResult.OverallStatus == handlers.LivenessResponseStatusDOWN {
 		statusCode = http.StatusServiceUnavailable
@@ -229,7 +221,6 @@ func (h *RequestHandler) HealthCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create the health response
 	healthResp := handlers.HealthResponse{
 		Status:    healthResult.OverallStatus,
 		Timestamp: now,
@@ -309,6 +300,38 @@ func stringPtr(s string) *string {
 
 func float32Ptr(f float32) *float32 {
 	return &f
+}
+
+// mapRequestOptionsToDomainOptions maps HTTP request options to domain options
+func (h *RequestHandler) mapRequestOptionsToDomainOptions(reqOptions *struct {
+	CheckLinks      *bool `json:"check_links,omitempty"`
+	DetectForms     *bool `json:"detect_forms,omitempty"`
+	IncludeHeadings *bool `json:"include_headings,omitempty"`
+	Timeout         *int  `json:"timeout,omitempty"`
+}) domain.AnalysisOptions {
+	options := domain.AnalysisOptions{
+		IncludeHeadings: true,             // Default to true
+		CheckLinks:      true,             // Default to true
+		DetectForms:     true,             // Default to true
+		Timeout:         30 * time.Second, // Default timeout
+	}
+
+	if reqOptions != nil {
+		if reqOptions.IncludeHeadings != nil {
+			options.IncludeHeadings = *reqOptions.IncludeHeadings
+		}
+		if reqOptions.CheckLinks != nil {
+			options.CheckLinks = *reqOptions.CheckLinks
+		}
+		if reqOptions.DetectForms != nil {
+			options.DetectForms = *reqOptions.DetectForms
+		}
+		if reqOptions.Timeout != nil {
+			options.Timeout = time.Duration(*reqOptions.Timeout) * time.Second
+		}
+	}
+
+	return options
 }
 
 // writeErrorResponse writes a standardized error response

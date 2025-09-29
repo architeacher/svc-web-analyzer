@@ -575,12 +575,10 @@ func runHTMLAnalyzerSuite(t *testing.T, suite *HTMLAnalyzerTestSuite) {
 		t.Run(method.Name, func(t *testing.T) {
 			t.Parallel()
 
-			// Create a fresh suite instance for each test
 			testSuite := newHTMLAnalyzerTestSuite(t)
 			testSuite.SetupTest()
 			defer testSuite.TearDownTest()
 
-			// Call the test method
 			methodValue := reflect.ValueOf(testSuite).MethodByName(method.Name)
 			if methodValue.IsValid() {
 				methodValue.Call([]reflect.Value{})
