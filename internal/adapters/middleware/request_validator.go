@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/architeacher/svc-web-analyzer/internal/handlers"
+	"github.com/architeacher/svc-web-analyzer/internal/adapters/http/handlers"
 	"github.com/architeacher/svc-web-analyzer/internal/infrastructure"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
@@ -15,19 +15,21 @@ import (
 	"github.com/getkin/kin-openapi/routers/gorillamux"
 )
 
-// ErrorHandler is called when there is an error in validation.
-type ErrorHandler func(logger *infrastructure.Logger, w http.ResponseWriter, message string, statusCode int)
+type (
+	// ErrorHandler is called when there is an error in validation.
+	ErrorHandler func(logger *infrastructure.Logger, w http.ResponseWriter, message string, statusCode int)
 
-// RequestValidatorOptions to customize request validation, openapi3filter specified options will be passed through.
-type RequestValidatorOptions struct {
-	Options      openapi3filter.Options
-	ErrorHandler ErrorHandler
-	// SilenceServersWarning allows silencing a warning for https://github.com/deepmap/oapi-codegen/issues/882 that reports when an OpenAPI spec has `spec.Servers != nil`
-	SilenceServersWarning bool
-}
+	// RequestValidatorOptions to customize request validation, openapi3filter specified options will be passed through.
+	RequestValidatorOptions struct {
+		Options      openapi3filter.Options
+		ErrorHandler ErrorHandler
+		// SilenceServersWarning allows silencing a warning for https://github.com/deepmap/oapi-codegen/issues/882 that reports when an OpenAPI spec has `spec.Servers != nil`
+		SilenceServersWarning bool
+	}
+)
 
-// OapiRequestValidatorWithOptions Creates middleware to validate request by swagger spec.
-// This middleware is good for net/http either since go-chi is 100% compatible with net/http.
+// OapiRequestValidatorWithOptions Creates middleware to validate a request by swagger spec.
+// This middleware is good for net/http too since go-chi is 100% compatible with net/http.
 func OapiRequestValidatorWithOptions(
 	logger *infrastructure.Logger,
 	swagger *openapi3.T,
@@ -44,6 +46,13 @@ func OapiRequestValidatorWithOptions(
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Skip validation for OPTIONS requests (CORS preflight)
+			if r.Method == http.MethodOptions {
+				next.ServeHTTP(w, r)
+
+				return
+			}
+
 			if statusCode, err := validateRequest(logger, r, router, options); err != nil {
 				if options != nil && options.ErrorHandler != nil {
 					options.ErrorHandler(logger, w, err.Error(), statusCode)

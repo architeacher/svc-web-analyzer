@@ -3,6 +3,6 @@ generate:
   models: true
   chi-server: true
   embedded-spec: true
-output: ../../internal/handlers/http_server_gen.go
+output: ../../internal/adapters/http/handlers/http_server_gen.go
 output-options:
   skip-prune: true

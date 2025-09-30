@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"errors"
+	"net/http"
 	"net/url"
 	"sync"
 	"time"
@@ -14,33 +15,31 @@ import (
 	"github.com/sony/gobreaker"
 )
 
-const (
-	defaultLinkCheckTimeout   = 10 * time.Second
-	maxConcurrentLinkChecks   = 10
-	maxLinksToCheck           = 100 // Prevent abuse
-	linkCheckRetries          = 2
-	linkCheckRetryWaitTime    = 500 * time.Millisecond
-	linkCheckMaxRetryWaitTime = 2 * time.Second
-)
+type (
+	LinkChecker struct {
+		client         *resty.Client
+		circuitBreaker *gobreaker.CircuitBreaker
+		logger         *infrastructure.Logger
+		config         config.LinkCheckerConfig
+	}
 
-type LinkChecker struct {
-	client         *resty.Client
-	circuitBreaker *gobreaker.CircuitBreaker
-	logger         *infrastructure.Logger
-	config         config.LinkCheckerConfig
-}
+	linkCheckResult struct {
+		StatusCode int
+		Error      string
+	}
+)
 
 func NewLinkChecker(config config.LinkCheckerConfig, logger *infrastructure.Logger) *LinkChecker {
 	client := resty.New()
 
-	client.SetTimeout(config.Timeout)
-	client.SetRetryCount(config.Retries)
-	client.SetRetryWaitTime(config.RetryWaitTime)
-	client.SetRetryMaxWaitTime(config.MaxRetryWaitTime)
-	client.SetRedirectPolicy(resty.FlexibleRedirectPolicy(5)) // Limit redirects for link checking
+	client.SetTimeout(config.Timeout).
+		SetRetryCount(config.Retries).
+		SetRetryWaitTime(config.RetryWaitTime).
+		SetRetryMaxWaitTime(config.MaxRetryWaitTime).
+		SetRedirectPolicy(resty.FlexibleRedirectPolicy(5)) // Limit redirects for link checking
 
 	client.SetHeaders(map[string]string{
-		"User-Agent": "WebPageAnalyzer-WebCrawler/1.0",
+		"User-Agent": "WebAnalyzer-WebCrawler/1.0",
 		"Accept":     "*/*",
 	})
 
@@ -93,7 +92,7 @@ func (lc *LinkChecker) CheckAccessibility(ctx context.Context, links []domain.Li
 		Int("links_to_check", len(externalLinks)).
 		Msg("Starting link accessibility check")
 
-	inaccessibleLinks := lc.checkLinksWithConcurrency(ctx, externalLinks)
+	inaccessibleLinks := lc.checkLinks(ctx, externalLinks)
 
 	lc.logger.Info().
 		Int("total_checked", len(externalLinks)).
@@ -130,7 +129,7 @@ func (lc *LinkChecker) filterExternalLinks(links []domain.Link) []domain.Link {
 	return externalLinks
 }
 
-func (lc *LinkChecker) checkLinksWithConcurrency(ctx context.Context, links []domain.Link) []domain.InaccessibleLink {
+func (lc *LinkChecker) checkLinks(ctx context.Context, links []domain.Link) []domain.InaccessibleLink {
 	var inaccessibleLinks []domain.InaccessibleLink
 	var mu sync.Mutex
 
@@ -138,10 +137,7 @@ func (lc *LinkChecker) checkLinksWithConcurrency(ctx context.Context, links []do
 	var wg sync.WaitGroup
 
 	for _, link := range links {
-		wg.Add(1)
-		go func(link domain.Link) {
-			defer wg.Done()
-
+		wg.Go(func() {
 			semaphore <- struct{}{}        // Acquire semaphore
 			defer func() { <-semaphore }() // Release semaphore
 
@@ -150,17 +146,18 @@ func (lc *LinkChecker) checkLinksWithConcurrency(ctx context.Context, links []do
 				inaccessibleLinks = append(inaccessibleLinks, *inaccessibleLink)
 				mu.Unlock()
 			}
-		}(link)
+		})
 	}
 
 	wg.Wait()
+
 	return inaccessibleLinks
 }
 
 func (lc *LinkChecker) checkSingleLink(ctx context.Context, link domain.Link) *domain.InaccessibleLink {
 	startTime := time.Now()
 
-	result, err := lc.circuitBreaker.Execute(func() (interface{}, error) {
+	result, err := lc.circuitBreaker.Execute(func() (any, error) {
 		return lc.performLinkCheck(ctx, link.URL)
 	})
 
@@ -194,7 +191,7 @@ func (lc *LinkChecker) checkSingleLink(ctx context.Context, link domain.Link) *d
 		Str("url", link.URL).
 		Int("status_code", checkResult.StatusCode).
 		Int64("duration_ms", duration.Milliseconds()).
-		Msg("Link check completed")
+		Msg("link check completed")
 
 	if checkResult.StatusCode >= 400 {
 		return &domain.InaccessibleLink{
@@ -207,11 +204,6 @@ func (lc *LinkChecker) checkSingleLink(ctx context.Context, link domain.Link) *d
 	return nil
 }
 
-type linkCheckResult struct {
-	StatusCode int
-	Error      string
-}
-
 func (lc *LinkChecker) performLinkCheck(ctx context.Context, linkURL string) (*linkCheckResult, error) {
 	// Use HEAD request first for efficiency
 	resp, err := lc.client.R().
@@ -219,7 +211,7 @@ func (lc *LinkChecker) performLinkCheck(ctx context.Context, linkURL string) (*l
 		Head(linkURL)
 
 	if err != nil {
-		// If HEAD fails, try GET request
+		// If HEAD fails, try the GET request
 		resp, err = lc.client.R().
 			SetContext(ctx).
 			Get(linkURL)
@@ -232,7 +224,7 @@ func (lc *LinkChecker) performLinkCheck(ctx context.Context, linkURL string) (*l
 		StatusCode: resp.StatusCode(),
 	}
 
-	if resp.StatusCode() >= 400 {
+	if resp.StatusCode() >= http.StatusBadRequest {
 		result.Error = resp.Status()
 	}
 

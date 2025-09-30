@@ -11,51 +11,32 @@ import (
 
 	"aidanwoods.dev/go-paseto/v2"
 	"github.com/architeacher/svc-web-analyzer/internal/config"
-	"github.com/architeacher/svc-web-analyzer/internal/domain"
 	"github.com/architeacher/svc-web-analyzer/internal/infrastructure"
 	"github.com/getkin/kin-openapi/openapi3filter"
 )
 
-type PasetoTokenClaims struct {
-	Issuer    string   `json:"iss"`
-	Subject   string   `json:"sub"`
-	Audience  string   `json:"aud"`
-	ExpiresAt int64    `json:"exp"`
-	IssuedAt  int64    `json:"iat"`
-	NotBefore int64    `json:"nbf"`
-	JTI       string   `json:"jti"`
-	Scopes    []string `json:"scopes,omitempty"`
-}
-
-// parseTimeField converts either an ISO 8601 string or Unix timestamp to Unix timestamp
-func parseTimeField(value interface{}) (int64, error) {
-	switch v := value.(type) {
-	case string:
-		// Parse ISO 8601 timestamp
-		t, err := time.Parse(time.RFC3339, v)
-		if err != nil {
-			return 0, err
-		}
-		return t.Unix(), nil
-	case float64:
-		// Already a Unix timestamp
-		return int64(v), nil
-	case int64:
-		return v, nil
-	default:
-		return 0, fmt.Errorf("unsupported time format: %T", value)
+type (
+	PasetoTokenClaims struct {
+		Issuer    string   `json:"iss"`
+		Subject   string   `json:"sub"`
+		Audience  string   `json:"aud"`
+		ExpiresAt int64    `json:"exp"`
+		IssuedAt  int64    `json:"iat"`
+		NotBefore int64    `json:"nbf"`
+		JTI       string   `json:"jti"`
+		Scopes    []string `json:"scopes,omitempty"`
 	}
-}
 
-type PasetoAuthMiddleware struct {
-	config    config.AuthConfig
-	logger    *infrastructure.Logger
-	publicKey paseto.V4AsymmetricPublicKey
-}
+	PasetoAuthMiddleware struct {
+		config    config.AuthConfig
+		logger    *infrastructure.Logger
+		publicKey paseto.V4AsymmetricPublicKey
+	}
+)
 
 func NewPasetoAuthMiddleware(config config.AuthConfig, logger *infrastructure.Logger) *PasetoAuthMiddleware {
-	// Todo: For testing purposes, we'll use the public key that matches the README token
-	// In production, this should be loaded from config or a key management service
+	// For testing purposes, we'll use the public key that matches the README token
+	// Todo: In production, this should be loaded from config or a key management service
 	publicKeyHex := "01c7981f62c676934dc4acfa7825205ae927960875d09abec497efbe2dba41b7"
 	publicKey, err := paseto.NewV4AsymmetricPublicKeyFromHex(publicKeyHex)
 	if err != nil {
@@ -74,13 +55,15 @@ func (m *PasetoAuthMiddleware) Middleware(next http.Handler) http.Handler {
 		// Skip authentication for certain paths
 		if m.shouldSkipAuth(r.URL.Path) {
 			next.ServeHTTP(w, r)
+
 			return
 		}
 
-		// Extract the token from header
+		// Extract the token from the header
 		token, err := m.extractToken(r)
 		if err != nil {
 			m.writeUnauthorizedResponse(w, "MISSING_TOKEN", "Authentication token is required")
+
 			return
 		}
 
@@ -88,6 +71,7 @@ func (m *PasetoAuthMiddleware) Middleware(next http.Handler) http.Handler {
 		claims, err := m.validateToken(token)
 		if err != nil {
 			m.writeUnauthorizedResponse(w, "INVALID_TOKEN", err.Error())
+
 			return
 		}
 
@@ -129,6 +113,17 @@ func (m *PasetoAuthMiddleware) extractToken(r *http.Request) (string, error) {
 		return token, nil
 	}
 
+	// For SSE endpoints (/events), try query parameter as EventSource doesn't support custom headers
+	if strings.Contains(r.URL.Path, "/events") {
+		if token := r.URL.Query().Get("token"); token != "" {
+			return token, nil
+		}
+		// Also try 'access_token' for RFC compliance
+		if token := r.URL.Query().Get("access_token"); token != "" {
+			return token, nil
+		}
+	}
+
 	return "", fmt.Errorf("authentication token not found")
 }
 
@@ -157,16 +152,18 @@ func (m *PasetoAuthMiddleware) validateToken(tokenString string) (*PasetoTokenCl
 					var claims PasetoTokenClaims
 					if json.Unmarshal(payloadBytes, &claims) == nil {
 						m.logger.Info().Msg("Successfully extracted claims from token for demo")
+
 						return &claims, nil
 					}
 				}
 			}
 		}
+
 		return nil, fmt.Errorf("failed to parse PASETO token: %w", err)
 	}
 
 	// Extract claims from token with flexible timestamp parsing
-	var rawClaims map[string]interface{}
+	var rawClaims map[string]any
 	if err := json.Unmarshal(token.ClaimsJSON(), &rawClaims); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal token claims: %w", err)
 	}
@@ -206,7 +203,7 @@ func (m *PasetoAuthMiddleware) validateToken(tokenString string) (*PasetoTokenCl
 
 	// Parse scopes if present
 	if scopes, ok := rawClaims["scopes"]; ok {
-		if scopeSlice, ok := scopes.([]interface{}); ok {
+		if scopeSlice, ok := scopes.([]any); ok {
 			for _, scope := range scopeSlice {
 				if scopeStr, ok := scope.(string); ok {
 					claims.Scopes = append(claims.Scopes, scopeStr)
@@ -249,7 +246,6 @@ func NewPasetoAuthenticationFunc(config config.AuthConfig, logger *infrastructur
 	authMiddleware := NewPasetoAuthMiddleware(config, logger)
 
 	return func(ctx context.Context, input *openapi3filter.AuthenticationInput) error {
-		// Skip auth if not enabled
 		if !config.Enabled {
 			return nil
 		}
@@ -261,7 +257,6 @@ func NewPasetoAuthenticationFunc(config config.AuthConfig, logger *infrastructur
 			return nil
 		}
 
-		// Extract and validate token
 		token, err := authMiddleware.extractToken(r)
 		if err != nil {
 			return fmt.Errorf("authentication token not found")
@@ -290,7 +285,7 @@ func (m *PasetoAuthMiddleware) writeUnauthorizedResponse(w http.ResponseWriter, 
 	timestamp := time.Now()
 	statusCode := http.StatusUnauthorized
 
-	errorResponse := map[string]interface{}{
+	errorResponse := map[string]any{
 		"status_code": statusCode,
 		"error":       errorCode,
 		"message":     message,
@@ -308,10 +303,22 @@ func (m *PasetoAuthMiddleware) writeUnauthorizedResponse(w http.ResponseWriter, 
 		Msg("Authentication failed")
 }
 
-func GetPasetoClaims(r *http.Request) (*PasetoTokenClaims, error) {
-	claims, ok := r.Context().Value("paseto_claims").(*PasetoTokenClaims)
-	if !ok {
-		return nil, domain.ErrUnauthorized
+// parseTimeField converts either an ISO 8601 string or Unix timestamp to Unix timestamp
+func parseTimeField(value any) (int64, error) {
+	switch v := value.(type) {
+	case string:
+		// Parse ISO 8601 timestamp
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			return 0, err
+		}
+		return t.Unix(), nil
+	case float64:
+		// Already a Unix timestamp
+		return int64(v), nil
+	case int64:
+		return v, nil
+	default:
+		return 0, fmt.Errorf("unsupported time format: %T", value)
 	}
-	return claims, nil
 }

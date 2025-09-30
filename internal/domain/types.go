@@ -3,7 +3,7 @@ package domain
 import (
 	"time"
 
-	"github.com/architeacher/svc-web-analyzer/internal/handlers"
+	"github.com/architeacher/svc-web-analyzer/internal/adapters/http/handlers"
 )
 
 type (

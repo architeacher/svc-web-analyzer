@@ -1,4 +1,4 @@
-package adapters
+package repos
 
 import (
 	"context"
@@ -31,7 +31,7 @@ func NewCacheRepository(client *infrastructure.KeydbClient, cfg config.CacheConf
 	}
 }
 
-func (r CacheRepository) Find(ctx context.Context, analysisID string) (*domain.Analysis, error) {
+func (r *CacheRepository) Find(ctx context.Context, analysisID string) (*domain.Analysis, error) {
 	key := analysisKeyPrefix + analysisID
 
 	data, err := r.client.Get(ctx, key)
@@ -53,7 +53,7 @@ func (r CacheRepository) Find(ctx context.Context, analysisID string) (*domain.A
 	return &analysis, nil
 }
 
-func (r CacheRepository) Set(ctx context.Context, analysis *domain.Analysis) error {
+func (r *CacheRepository) Set(ctx context.Context, analysis *domain.Analysis) error {
 	key := analysisKeyPrefix + analysis.ID.String()
 
 	data, err := json.Marshal(analysis)
@@ -82,13 +82,13 @@ func (r CacheRepository) Set(ctx context.Context, analysis *domain.Analysis) err
 	return nil
 }
 
-func (r CacheRepository) Delete(ctx context.Context, analysisID string) error {
+func (r *CacheRepository) Delete(ctx context.Context, analysisID string) error {
 	key := analysisKeyPrefix + analysisID
 	return r.client.Delete(ctx, key)
 }
 
 // generateAnalysisKey creates a unique cache key based on URL and analysis options
-func (r CacheRepository) generateAnalysisKey(url string, options domain.AnalysisOptions) string {
+func (r *CacheRepository) generateAnalysisKey(url string, options domain.AnalysisOptions) string {
 	data := fmt.Sprintf("%s:%t:%t:%t:%s",
 		url,
 		options.IncludeHeadings,

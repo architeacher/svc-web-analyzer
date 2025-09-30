@@ -1,4 +1,4 @@
-package adapters
+package http
 
 import (
 	"testing"
@@ -14,8 +14,8 @@ func TestRequestHandler_mapRequestOptionsToDomainOptions(t *testing.T) {
 	h := &RequestHandler{}
 
 	tests := []struct {
-		name     string
-		input    *struct {
+		name  string
+		input *struct {
 			CheckLinks      *bool `json:"check_links,omitempty"`
 			DetectForms     *bool `json:"detect_forms,omitempty"`
 			IncludeHeadings *bool `json:"include_headings,omitempty"`

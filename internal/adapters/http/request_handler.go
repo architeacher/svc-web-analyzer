@@ -1,12 +1,13 @@
-package adapters
+package http
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
+	"github.com/architeacher/svc-web-analyzer/internal/adapters/http/handlers"
 	"github.com/architeacher/svc-web-analyzer/internal/domain"
-	"github.com/architeacher/svc-web-analyzer/internal/handlers"
 	"github.com/architeacher/svc-web-analyzer/internal/infrastructure"
 	"github.com/architeacher/svc-web-analyzer/internal/usecases"
 	"github.com/architeacher/svc-web-analyzer/internal/usecases/commands"
@@ -15,12 +16,12 @@ import (
 )
 
 type RequestHandler struct {
-	app    usecases.Application
+	app    *usecases.WebApplication
 	logger *infrastructure.Logger
 }
 
 func NewRequestHandler(
-	a usecases.Application,
+	a *usecases.WebApplication,
 	logger *infrastructure.Logger,
 ) *RequestHandler {
 	return &RequestHandler{
@@ -33,12 +34,13 @@ func NewRequestHandler(
 func (h *RequestHandler) AnalyzeURL(w http.ResponseWriter, r *http.Request, params handlers.AnalyzeURLParams) {
 	var req handlers.AnalyzeURLJSONRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.writeErrorResponse(w, http.StatusBadRequest, "bad_request", "Invalid request body", err.Error())
+		h.writeErrorResponse(w, http.StatusBadRequest, "bad_request", "invalid request body", err.Error())
 		return
 	}
 
 	if req.Url == "" {
 		h.writeErrorResponse(w, http.StatusBadRequest, "bad_request", "URL is required", "url field cannot be empty")
+
 		return
 	}
 
@@ -52,13 +54,19 @@ func (h *RequestHandler) AnalyzeURL(w http.ResponseWriter, r *http.Request, para
 		},
 	)
 	if err != nil {
-		h.writeErrorResponse(w, http.StatusInternalServerError, "internal_server_error", "Failed to start analysis", err.Error())
+		h.writeErrorResponse(w, http.StatusInternalServerError, "internal_server_error", "failed to start analysis", err.Error())
+
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
-	json.NewEncoder(w).Encode(result)
+
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		h.writeErrorResponse(w, http.StatusInternalServerError, "internal_server_error", "failed to encode result", err.Error())
+
+		return
+	}
 }
 
 // GetAnalysis implements ServerInterface.GetAnalysis
@@ -68,7 +76,7 @@ func (h *RequestHandler) GetAnalysis(w http.ResponseWriter, r *http.Request, ana
 		queries.FetchAnalysisQuery{AnalysisID: analysisId.String()},
 	)
 	if err != nil {
-		h.writeErrorResponse(w, http.StatusNotFound, "not_found", "Analysis not found", err.Error())
+		h.writeErrorResponse(w, http.StatusNotFound, "not_found", "analysis not found", err.Error())
 		return
 	}
 
@@ -86,19 +94,21 @@ func (h *RequestHandler) GetAnalysis(w http.ResponseWriter, r *http.Request, ana
 
 // GetAnalysisEvents implements ServerInterface.GetAnalysisEvents
 func (h *RequestHandler) GetAnalysisEvents(w http.ResponseWriter, r *http.Request, analysisId openapi_types.UUID, params handlers.GetAnalysisEventsParams) {
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Headers", "CacheClient-Control")
-	w.WriteHeader(http.StatusOK)
-
+	// Check if the response writer supports flushing before setting headers
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		h.writeErrorResponse(w, http.StatusInternalServerError, "internal_server_error", "Streaming not supported", "response writer does not support flushing")
 
 		return
 	}
+
+	// Set SSE headers only after we know we can flush
+	w.Header().Set("Content-Type", "text/event-stream;charset=UTF-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-PASETO-Token, API-Version")
+	w.WriteHeader(http.StatusOK)
 
 	events, err := h.app.Queries.FetchAnalysisEventsQueryHandler.Execute(
 		r.Context(),
@@ -112,21 +122,48 @@ func (h *RequestHandler) GetAnalysisEvents(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	flusher.Flush()
-
 	for event := range events {
 		select {
 		case <-r.Context().Done():
 			return
 		default:
-			eventData, _ := json.Marshal(event)
-			w.Write([]byte("event: analysis\n"))
-			w.Write([]byte("data: " + string(eventData) + "\n\n"))
-
+			eventData, _ := json.Marshal(event.Payload)
+			// Use domain event types directly as SSE event types
+			w.Write([]byte(fmt.Sprintf("event: %s\n", event.Type)))
+			w.Write([]byte(fmt.Sprintf("data: %s\n\n", eventData)))
 			flusher.Flush()
 		}
 	}
 }
+
+func (h *RequestHandler) LivenessCheck(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	livenessResult, err := h.app.Queries.FetchLivenessReportQueryHandler.Execute(
+		ctx,
+		queries.FetchLivenessReportQuery{},
+	)
+	if err != nil {
+		h.writeErrorResponse(w, http.StatusInternalServerError, "internal_server_error", "Failed to check liveness", err.Error())
+		return
+	}
+
+	livenessResp := handlers.LivenessResponse{
+		Status:    livenessResult.OverallStatus,
+		Timestamp: time.Now(),
+		Version:   "1.0.0",
+	}
+
+	statusCode := http.StatusOK
+	if livenessResult.OverallStatus == handlers.LivenessResponseStatusDOWN {
+		statusCode = http.StatusServiceUnavailable
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(livenessResp)
+}
+
 func (h *RequestHandler) ReadinessCheck(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	now := time.Now()
@@ -137,6 +174,7 @@ func (h *RequestHandler) ReadinessCheck(w http.ResponseWriter, r *http.Request) 
 	)
 	if err != nil {
 		h.writeErrorResponse(w, http.StatusInternalServerError, "internal_server_error", "Failed to check readiness", err.Error())
+
 		return
 	}
 
@@ -176,35 +214,10 @@ func (h *RequestHandler) ReadinessCheck(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(readinessResp)
-}
 
-func (h *RequestHandler) LivenessCheck(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	livenessResult, err := h.app.Queries.FetchLivenessReportQueryHandler.Execute(
-		ctx,
-		queries.FetchLivenessReportQuery{},
-	)
-	if err != nil {
-		h.writeErrorResponse(w, http.StatusInternalServerError, "internal_server_error", "Failed to check liveness", err.Error())
-		return
+	if err := json.NewEncoder(w).Encode(readinessResp); err != nil {
+		h.logger.Error().Err(err).Msg("failed to encode readiness response")
 	}
-
-	livenessResp := handlers.LivenessResponse{
-		Status:    livenessResult.OverallStatus,
-		Timestamp: time.Now(),
-		Version:   "1.0.0",
-	}
-
-	statusCode := http.StatusOK
-	if livenessResult.OverallStatus == handlers.LivenessResponseStatusDOWN {
-		statusCode = http.StatusServiceUnavailable
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(livenessResp)
 }
 
 // HealthCheck implements ServerInterface.HealthCheck
@@ -224,11 +237,12 @@ func (h *RequestHandler) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	healthResp := handlers.HealthResponse{
 		Status:    healthResult.OverallStatus,
 		Timestamp: now,
-		Version:   stringPtr("1.0.0"),
-		Uptime:    &healthResult.Uptime,
+		// Todo: read from the config.
+		Version: stringPtr("1.0.0"),
+		Uptime:  &healthResult.Uptime,
 		Checks: handlers.HealthResponse_Checks{
 			Storage: &struct {
-				Details      *map[string]interface{}                    `json:"details,omitempty"`
+				Details      *map[string]any                            `json:"details,omitempty"`
 				Error        *string                                    `json:"error,omitempty"`
 				LastChecked  *time.Time                                 `json:"last_checked,omitempty"`
 				ResponseTime *float32                                   `json:"response_time,omitempty"`
@@ -264,7 +278,7 @@ func (h *RequestHandler) HealthCheck(w http.ResponseWriter, r *http.Request) {
 				}(),
 			},
 			Queue: &struct {
-				Details      *map[string]interface{}                  `json:"details,omitempty"`
+				Details      *map[string]any                          `json:"details,omitempty"`
 				Error        *string                                  `json:"error,omitempty"`
 				LastChecked  *time.Time                               `json:"last_checked,omitempty"`
 				ResponseTime *float32                                 `json:"response_time,omitempty"`
@@ -298,10 +312,6 @@ func stringPtr(s string) *string {
 	return &s
 }
 
-func float32Ptr(f float32) *float32 {
-	return &f
-}
-
 // mapRequestOptionsToDomainOptions maps HTTP request options to domain options
 func (h *RequestHandler) mapRequestOptionsToDomainOptions(reqOptions *struct {
 	CheckLinks      *bool `json:"check_links,omitempty"`
@@ -316,19 +326,24 @@ func (h *RequestHandler) mapRequestOptionsToDomainOptions(reqOptions *struct {
 		Timeout:         30 * time.Second, // Default timeout
 	}
 
-	if reqOptions != nil {
-		if reqOptions.IncludeHeadings != nil {
-			options.IncludeHeadings = *reqOptions.IncludeHeadings
-		}
-		if reqOptions.CheckLinks != nil {
-			options.CheckLinks = *reqOptions.CheckLinks
-		}
-		if reqOptions.DetectForms != nil {
-			options.DetectForms = *reqOptions.DetectForms
-		}
-		if reqOptions.Timeout != nil {
-			options.Timeout = time.Duration(*reqOptions.Timeout) * time.Second
-		}
+	if reqOptions == nil {
+		return options
+	}
+
+	if reqOptions.IncludeHeadings != nil {
+		options.IncludeHeadings = *reqOptions.IncludeHeadings
+	}
+
+	if reqOptions.CheckLinks != nil {
+		options.CheckLinks = *reqOptions.CheckLinks
+	}
+
+	if reqOptions.DetectForms != nil {
+		options.DetectForms = *reqOptions.DetectForms
+	}
+
+	if reqOptions.Timeout != nil {
+		options.Timeout = time.Duration(*reqOptions.Timeout) * time.Second
 	}
 
 	return options
@@ -346,5 +361,8 @@ func (h *RequestHandler) writeErrorResponse(w http.ResponseWriter, statusCode in
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(errorResp)
+
+	if err := json.NewEncoder(w).Encode(errorResp); err != nil {
+		h.logger.Error().Err(err).Msg("failed to encode error response")
+	}
 }

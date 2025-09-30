@@ -30,9 +30,9 @@ type WebFetcherTestSuite struct {
 	t          *testing.T
 }
 
-// TestWebPageFetcher is a test version of WebPageFetcher that doesn't block local URLs
+// TestWebPageFetcher is a test version of WebFetcher that doesn't block local URLs
 type TestWebPageFetcher struct {
-	*WebPageFetcher
+	*WebFetcher
 }
 
 // Fetch overrides the normal Fetch to use the test validation
@@ -45,7 +45,7 @@ func (f *TestWebPageFetcher) Fetch(ctx context.Context, targetURL string, timeou
 		f.client.SetTimeout(timeout)
 	}
 
-	result, err := f.circuitBreaker.Execute(func() (interface{}, error) {
+	result, err := f.circuitBreaker.Execute(func() (any, error) {
 		return f.fetchWithRetry(ctx, targetURL)
 	})
 
@@ -103,7 +103,7 @@ func newWebFetcherTestSuite(t *testing.T) *WebFetcherTestSuite {
 		MaxRetryWaitTime:     1 * time.Second,
 		MaxRedirects:         10,
 		MaxResponseSizeBytes: 10 * 1024 * 1024, // 10MB
-		UserAgent:            "WebPageAnalyzer/1.0",
+		UserAgent:            "WebAnalyzer/1.0",
 		CircuitBreaker: config.CircuitBreakerConfig{
 			MaxRequests: 3,
 			Interval:    10 * time.Second,
@@ -120,8 +120,8 @@ func newWebFetcherTestSuite(t *testing.T) *WebFetcherTestSuite {
 
 // SetupTest sets up resources before each test
 func (suite *WebFetcherTestSuite) SetupTest() {
-	baseFetcher := NewWebPageFetcher(suite.config, suite.logger)
-	suite.fetcher = &TestWebPageFetcher{WebPageFetcher: baseFetcher}
+	baseFetcher := NewWebFetcher(suite.config, suite.logger)
+	suite.fetcher = &TestWebPageFetcher{WebFetcher: baseFetcher}
 }
 
 // TearDownTest cleans up resources after each test
@@ -520,6 +520,27 @@ func (suite *WebFetcherTestSuite) TestFetch_InvalidURLs() {
 			expectedCode:   "INVALID_URL",
 			useRealFetcher: true, // Use real fetcher to test actual validation
 		},
+		{
+			name:           "URL too short (2 chars)",
+			url:            "ab",
+			expectedErrMsg: "Invalid URL: ab",
+			expectedCode:   "INVALID_URL",
+			useRealFetcher: true, // Use real fetcher to test actual validation
+		},
+		{
+			name:           "URL exactly at minimum length (3 chars)",
+			url:            "a.b",
+			expectedErrMsg: "Invalid URL: a.b",
+			expectedCode:   "INVALID_URL",
+			useRealFetcher: true, // Use real fetcher to test actual validation (will fail on other validation)
+		},
+		{
+			name:           "URL too long (>10000 chars)",
+			url:            "https://example.com/" + strings.Repeat("a", 10000),
+			expectedErrMsg: "Invalid URL: https://example.com/" + strings.Repeat("a", 10000),
+			expectedCode:   "INVALID_URL",
+			useRealFetcher: true, // Use real fetcher to test actual validation
+		},
 	}
 
 	for _, tc := range cases {
@@ -542,14 +563,14 @@ func (suite *WebFetcherTestSuite) TestFetch_InvalidURLs() {
 					MaxRetryWaitTime:     1 * time.Second,
 					MaxRedirects:         10,
 					MaxResponseSizeBytes: 10 * 1024 * 1024,
-					UserAgent:            "WebPageAnalyzer/1.0",
+					UserAgent:            "WebAnalyzer/1.0",
 					CircuitBreaker: config.CircuitBreakerConfig{
 						MaxRequests: 3,
 						Interval:    10 * time.Second,
 						Timeout:     60 * time.Second,
 					},
 				}
-				realFetcher := NewWebPageFetcher(cfg, logger)
+				realFetcher := NewWebFetcher(cfg, logger)
 				result, err = realFetcher.Fetch(ctx, tc.url, 0)
 			} else {
 				// Use TestWebPageFetcher for other tests
@@ -798,7 +819,7 @@ func (suite *WebFetcherTestSuite) TestValidateURL() {
 			// Create a real fetcher to test actual validation logic
 			nopLogger := zerolog.Nop()
 			logger := &infrastructure.Logger{Logger: &nopLogger}
-			realFetcher := NewWebPageFetcher(config.WebFetcherConfig{}, logger)
+			realFetcher := NewWebFetcher(config.WebFetcherConfig{}, logger)
 
 			err := realFetcher.validateURL(tc.url)
 			if tc.wantErr {

@@ -1,3 +1,5 @@
+//go:generate go tool github.com/maxbrunsfeld/counterfeiter/v6 -generate
+
 package ports
 
 import (
@@ -7,6 +9,8 @@ import (
 )
 
 // HealthChecker defines the interface for checking system health
+//
+//counterfeiter:generate -o ../mocks/health_checker.go . HealthChecker
 type HealthChecker interface {
 	// CheckReadiness performs readiness check and returns detailed results
 	CheckReadiness(ctx context.Context) *domain.ReadinessResult

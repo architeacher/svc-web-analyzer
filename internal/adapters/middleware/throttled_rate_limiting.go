@@ -10,13 +10,13 @@ import (
 	"github.com/throttled/throttled/v2/store/memstore"
 )
 
-type ThrottledRateLimitMiddleware struct {
+type ThrottledRateLimitingMiddleware struct {
 	config      config.ThrottledRateLimitingConfig
 	httpLimiter *throttled.HTTPRateLimiterCtx
 	logger      *infrastructure.Logger
 }
 
-func NewThrottledRateLimitingMiddleware(config config.ThrottledRateLimitingConfig, logger *infrastructure.Logger) *ThrottledRateLimitMiddleware {
+func NewThrottledRateLimitingMiddleware(config config.ThrottledRateLimitingConfig, logger *infrastructure.Logger) *ThrottledRateLimitingMiddleware {
 	store, err := memstore.NewCtx(config.MaxKeys)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("Failed to create memory store for rate limiter")
@@ -37,14 +37,14 @@ func NewThrottledRateLimitingMiddleware(config config.ThrottledRateLimitingConfi
 		VaryBy:      &throttled.VaryBy{RemoteAddr: config.EnableIPLimiting},
 	}
 
-	return &ThrottledRateLimitMiddleware{
+	return &ThrottledRateLimitingMiddleware{
 		config:      config,
 		httpLimiter: httpLimiter,
 		logger:      logger,
 	}
 }
 
-func (m *ThrottledRateLimitMiddleware) Middleware(next http.Handler) http.Handler {
+func (m *ThrottledRateLimitingMiddleware) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Skip rate limiting for certain paths
 		if m.shouldSkipRateLimit(r.URL.Path) {
@@ -57,7 +57,7 @@ func (m *ThrottledRateLimitMiddleware) Middleware(next http.Handler) http.Handle
 	})
 }
 
-func (m *ThrottledRateLimitMiddleware) shouldSkipRateLimit(path string) bool {
+func (m *ThrottledRateLimitingMiddleware) shouldSkipRateLimit(path string) bool {
 	for _, skipPath := range m.config.SkipPaths {
 		if strings.HasPrefix(path, skipPath) {
 			return true

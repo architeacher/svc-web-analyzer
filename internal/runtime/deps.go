@@ -6,53 +6,66 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/architeacher/svc-web-analyzer/internal/adapters"
+	"github.com/architeacher/svc-web-analyzer/internal/adapters/http/handlers"
 	"github.com/architeacher/svc-web-analyzer/internal/adapters/middleware"
 	"github.com/architeacher/svc-web-analyzer/internal/config"
 	"github.com/architeacher/svc-web-analyzer/internal/domain"
-	"github.com/architeacher/svc-web-analyzer/internal/handlers"
 	"github.com/architeacher/svc-web-analyzer/internal/infrastructure"
 	"github.com/architeacher/svc-web-analyzer/internal/ports"
-	"github.com/architeacher/svc-web-analyzer/internal/service"
 	"github.com/architeacher/svc-web-analyzer/internal/usecases"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/hashicorp/vault/api"
-	"go.opentelemetry.io/otel"
 )
 
 type (
+	Applications struct {
+		Web        *usecases.WebApplication
+		Publisher  *usecases.PublisherApplication
+		Subscriber *usecases.SubscriberApplication
+	}
+
+	ApplicationWorkers struct {
+		OutboxProcessor ports.BackgroundProcessor
+		AnalysisWorker  ports.MessageHandler
+	}
+
+	TracerShutdownFunc func(ctx context.Context) error
+
 	InfrastructureDeps struct {
 		SecretStorageClient ports.SecretsRepository
 		HTTPServer          *http.Server
-		StorageClient       infrastructure.Storage
+		StorageClient       *infrastructure.Storage
 		QueueClient         infrastructure.Queue
 		CacheClient         *infrastructure.KeydbClient
 	}
 
 	DomainServices struct {
-		WebFetcher   ports.WebPageFetcher
+		WebFetcher   ports.WebFetcher
 		HTMLAnalyzer domain.HTMLAnalyzer
 		LinkChecker  ports.LinkChecker
 	}
 
 	Dependencies struct {
+		Apps    Applications
+		Workers ApplicationWorkers
+
 		cfg    *config.ServiceConfig
 		logger *infrastructure.Logger
 
-		tracerShutdownFunc TracerShutdownFunc
-
-		Infra InfrastructureDeps
-
+		Infra          InfrastructureDeps
 		DomainServices DomainServices
+
+		tracerShutdownFunc TracerShutdownFunc
+		secretVersion      int
 	}
 )
 
-func initializeDependencies(ctx context.Context) (*Dependencies, error) {
+func initializeDependencies(ctx context.Context, opts ...DependencyOption) (*Dependencies, error) {
 	cfg, err := config.Init()
 	if err != nil {
-		panic(fmt.Errorf("unable to load service configuration: %w", err))
+		return nil, fmt.Errorf("unable to load service configuration: %w", err)
 	}
 
 	appLogger := infrastructure.New(config.LoggingConfig{
@@ -62,92 +75,24 @@ func initializeDependencies(ctx context.Context) (*Dependencies, error) {
 
 	appLogger.Info().Msg("initializing dependencies...")
 
-	tracerShutdownFunc, err := initGlobalTracing(ctx, cfg)
-	if err != nil {
-		appLogger.Error().Err(err).Msg("failed to initialize global tracer")
+	deps := &Dependencies{
+		cfg:    cfg,
+		logger: appLogger,
 	}
 
-	secretStorageClient, err := createVaultClient(cfg.SecretStorage)
-	if err != nil {
-		appLogger.Fatal().Err(err).Msg("unable to create vault client")
-	}
+	// Start with default options and append any additional options.
+	options := defaultOptions(ctx)
+	options = append(options, opts...)
 
-	storageRepo := adapters.NewVaultRepository(secretStorageClient)
-	if cfg.SecretStorage.Enabled {
-		if err := config.Load(ctx, storageRepo, cfg); err != nil {
-			appLogger.Fatal().Err(err).Msg("unable to load service configuration")
+	for _, opt := range options {
+		if err := opt(deps); err != nil {
+			return nil, fmt.Errorf("failed to apply dependency option: %w", err)
 		}
-	} else {
-		appLogger.Info().Msg("secret storage is disabled, skipping vault configuration loading")
 	}
 
-	// Initialize cache
-	cacheClient := infrastructure.NewKeyDBClient(cfg.Cache, appLogger)
+	deps.logger.Info().Msg("dependencies initialized successfully")
 
-	// Test cache connection
-	ctx, cancel := context.WithTimeout(ctx, cfg.Cache.DialTimeout)
-	defer cancel()
-
-	if err := cacheClient.Ping(ctx); err != nil {
-		appLogger.Fatal().Err(err).Msg("failed to connect to cache, continuing without cache")
-		cacheClient = nil
-	} else {
-		appLogger.Info().Msg("cache connection established")
-	}
-
-	storage, err := infrastructure.NewStorage(cfg.Storage)
-	if err != nil {
-		appLogger.Fatal().Err(err).Msg("failed to initialize storage")
-	}
-
-	analysisService := service.NewApplicationService(
-		adapters.NewPostgresRepository(storage),
-		adapters.NewCacheRepository(
-			cacheClient,
-			cfg.Cache,
-			appLogger,
-		),
-		adapters.NewOutboxRepository(storage),
-		adapters.NewHealthChecker(),
-		storage,
-		cfg.SSE,
-		appLogger,
-	)
-
-	app := usecases.NewApplication(
-		analysisService,
-		appLogger,
-		otel.GetTracerProvider(),
-		infrastructure.NoOp{},
-	)
-
-	requestHandler := adapters.NewRequestHandler(app, appLogger)
-
-	httpServer := initHTTPServer(cfg, appLogger, requestHandler)
-
-	webFetcher := adapters.NewWebPageFetcher(cfg.WebFetcher, appLogger)
-
-	linkChecker := adapters.NewLinkChecker(cfg.LinkChecker, appLogger)
-
-	htmlAnalyzer := adapters.NewHTMLAnalyzer(appLogger)
-
-	appLogger.Info().Msg("dependencies initialized successfully")
-
-	return &Dependencies{
-		cfg:                cfg,
-		logger:             appLogger,
-		tracerShutdownFunc: tracerShutdownFunc,
-		Infra: InfrastructureDeps{
-			SecretStorageClient: adapters.NewVaultRepository(secretStorageClient),
-			HTTPServer:          httpServer,
-			CacheClient:         cacheClient,
-		},
-		DomainServices: DomainServices{
-			WebFetcher:   webFetcher,
-			HTMLAnalyzer: htmlAnalyzer,
-			LinkChecker:  linkChecker,
-		},
-	}, nil
+	return deps, nil
 }
 
 func initHTTPServer(cfg *config.ServiceConfig, logger *infrastructure.Logger, reqHandler ports.RequestHandler) *http.Server {
@@ -156,6 +101,9 @@ func initHTTPServer(cfg *config.ServiceConfig, logger *infrastructure.Logger, re
 	router := chi.NewRouter()
 
 	middlewares := initMiddlewares(cfg, logger)
+
+	// Add global CORS middleware to handle preflight requests
+	router.Use(middleware.NewSecurityHeadersMiddleware().Middleware)
 
 	// Spin up automatic generated routes
 	handlers.HandlerWithOptions(reqHandler, handlers.ChiServerOptions{
@@ -203,9 +151,9 @@ func initMiddlewares(cfg *config.ServiceConfig, logger *infrastructure.Logger) [
 		chimiddleware.Logger,
 		chimiddleware.Recoverer,
 		chimiddleware.Timeout(cfg.HTTPServer.WriteTimeout),
-		middleware.NewSecurityHeadersMiddleware().Middleware,
 		middleware.NewAPIVersionMiddleware(cfg.AppConfig.APIVersion).Middleware,
 		requestValidator,
+		middleware.NewSecurityHeadersMiddleware().Middleware,
 		middleware.Tracer(),
 	}
 
@@ -214,12 +162,12 @@ func initMiddlewares(cfg *config.ServiceConfig, logger *infrastructure.Logger) [
 		rateLimitMiddleware := middleware.NewThrottledRateLimitingMiddleware(cfg.ThrottledRateLimiting, logger)
 
 		middlewares = append(middlewares, rateLimitMiddleware.Middleware)
-		logger.Info().Msg("Rate limiting enabled")
+		logger.Info().Msg("rate limiting enabled")
 	}
 
 	// Authentication is handled by the OpenAPI request validator
 	if cfg.Auth.Enabled {
-		logger.Info().Msg("Authentication enabled")
+		logger.Info().Msg("authentication is enabled")
 	}
 
 	return middlewares
