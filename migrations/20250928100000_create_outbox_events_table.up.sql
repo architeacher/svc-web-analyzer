@@ -1,7 +1,7 @@
 -- Create outbox status enum for message processing states
 CREATE TYPE outbox_status AS ENUM ('pending', 'processing', 'published', 'failed');
 
--- Create outbox events table for reliable message delivery using outbox pattern
+-- Create the outbox events table for reliable message delivery using outbox pattern
 CREATE TABLE outbox_events (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     aggregate_id UUID NOT NULL, -- references analysis.id or other aggregates
@@ -14,8 +14,10 @@ CREATE TABLE outbox_events (
     payload JSONB NOT NULL,
     error_details TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    started_at TIMESTAMPTZ,
     published_at TIMESTAMPTZ,
-    processing_started_at TIMESTAMPTZ,
+    processed_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
     next_retry_at TIMESTAMPTZ
 );
 
@@ -41,8 +43,29 @@ CREATE INDEX idx_outbox_published ON outbox_events(published_at)
 -- GIN index for efficient JSON queries on payload
 CREATE INDEX idx_outbox_payload_gin ON outbox_events USING GIN(payload);
 
+-- Function to update analysis duration when outbox event completes
+CREATE OR REPLACE FUNCTION update_analysis_duration()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.completed_at IS NOT NULL AND NEW.created_at IS NOT NULL THEN
+        UPDATE analysis
+        SET duration = EXTRACT(EPOCH FROM (NEW.completed_at - NEW.created_at)) * 1000,
+            completed_at = NEW.completed_at
+        WHERE id = NEW.aggregate_id;
+    END IF;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- Trigger to automatically update analysis duration
+CREATE TRIGGER update_analysis_duration
+    AFTER UPDATE ON outbox_events
+    FOR EACH ROW
+    WHEN (NEW.completed_at IS NOT NULL AND OLD.completed_at IS NULL)
+    EXECUTE FUNCTION update_analysis_duration();
+
 -- Add table and column comments for documentation
-COMMENT ON TABLE outbox_events IS 'Outbox pattern table for reliable message delivery to message queues';
+COMMENT ON TABLE outbox_events IS 'Outbox pattern table for reliable message delivery to message queues. Timeline: created_at → started_at (Publisher) → published_at → processed_at (Subscriber) → completed_at';
 COMMENT ON COLUMN outbox_events.aggregate_id IS 'ID of the domain aggregate this event relates to';
 COMMENT ON COLUMN outbox_events.aggregate_type IS 'Type of domain aggregate (analysis, user, etc.)';
 COMMENT ON COLUMN outbox_events.event_type IS 'Type of event for message routing (e.g., analysis.requested)';
@@ -51,9 +74,12 @@ COMMENT ON COLUMN outbox_events.retry_count IS 'Number of retry attempts for fai
 COMMENT ON COLUMN outbox_events.max_retries IS 'Maximum number of retry attempts before permanent failure';
 COMMENT ON COLUMN outbox_events.status IS 'Current processing status of the outbox event';
 COMMENT ON COLUMN outbox_events.payload IS 'JSON payload containing event data for message queue';
-COMMENT ON COLUMN outbox_events.error_details IS 'Error information from failed publishing attempts';
-COMMENT ON COLUMN outbox_events.published_at IS 'Timestamp when event was successfully published to queue';
-COMMENT ON COLUMN outbox_events.processing_started_at IS 'Timestamp when event processing began';
+COMMENT ON COLUMN outbox_events.error_details IS 'Infrastructure error information from failed message publishing attempts (connection errors, serialization failures, queue unavailable)';
+COMMENT ON COLUMN outbox_events.created_at IS 'Timestamp when outbox event is created (timeline step 1)';
+COMMENT ON COLUMN outbox_events.started_at IS 'Timestamp when Publisher starts publishing to message queue (timeline step 2)';
+COMMENT ON COLUMN outbox_events.published_at IS 'Timestamp when event was successfully published to queue (timeline step 3)';
+COMMENT ON COLUMN outbox_events.processed_at IS 'Timestamp when Subscriber starts processing the analysis (timeline step 4)';
+COMMENT ON COLUMN outbox_events.completed_at IS 'Timestamp when Subscriber completes the analysis (timeline step 5 - triggers analysis.duration update)';
 COMMENT ON COLUMN outbox_events.next_retry_at IS 'Timestamp when failed event should be retried';
 
 -- Index comments for maintenance

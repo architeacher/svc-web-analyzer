@@ -30,8 +30,8 @@ VAULT_UI=true
 
 POSTGRES_HOST="postgres"
 POSTGRES_PORT=5432
-POSTGRES_DB="web_analyzer"
-POSTGRES_USER="postgres"
+POSTGRES_DATABASE="web_analyzer"
+POSTGRES_USERNAME="postgres"
 POSTGRES_PASSWORD="bottom.Secret"
 
 # +-------+

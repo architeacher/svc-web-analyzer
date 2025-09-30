@@ -2,6 +2,8 @@
 
 This document captures the key architectural decisions made for the Web Analyzer project, providing context and rationale for future development.
 
+> **Status**: Phase 1 Complete ✅ - All core backend architecture decisions have been implemented and are in production. The event-driven microservices architecture with publisher/subscriber pattern, outbox pattern, and clean architecture is fully operational.
+
 ## ADR-001: OpenAPI-First Design Approach
 
 **Context**: Need to design a robust API with clear documentation and type safety.
@@ -116,7 +118,32 @@ Implement [PASETO](https://paseto.io/) (Platform Agnostic Security Token with Ex
 - **Negative**: Custom implementation requires careful security review
 - **Implementation**: Bearer token authentication with comprehensive validation.
 
-## ADR-007: Modular Make-based Build System
+## ADR-007: UUID-based Analysis Identifiers for Security
+
+**Context**: Need secure, unpredictable identifiers for analysis resources to prevent information leakage and unauthorized access.
+
+### Decision
+Use UUIDs (Universally Unique Identifiers) for analysis IDs instead of sequential integers or predictable identifiers.
+
+### Rationale
+- **Information Leakage Prevention**: Sequential IDs reveal business metrics (total analyses, growth rate, volume patterns)
+- **Enumeration Attack Protection**: Unpredictable UUIDs prevent attackers from guessing valid analysis IDs
+- **Authorization Bypass Prevention**: Random identifiers make it infeasible to access other users' analyses through ID manipulation
+- **Privacy Enhancement**: Users cannot infer information about other analyses or total system usage
+- **Security by Design**: Reduces attack surface without relying solely on authentication/authorization layers
+
+### Implementation
+- **Database Schema**: UUID primary keys for analysis tables
+- **API Responses**: Analysis IDs returned as UUID strings in API responses
+- **URL Parameters**: Analysis IDs passed as UUIDs in REST endpoints (`/v1/analysis/{analysisId}`)
+- **UUID Version**: UUID v4 (random) for maximum unpredictability
+
+### Consequences
+- **Positive**: Enhanced security posture, information disclosure prevention, resistance to enumeration attacks
+- **Negative**: Slightly larger storage footprint (16 bytes vs 4-8 bytes for integers), non-human-readable identifiers
+- **Trade-off**: Minor storage overhead for significant security improvement
+
+## ADR-008: Modular Make-based Build System
 
 **Context**: Need a maintainable build system that supports development workflows.
 
@@ -135,7 +162,7 @@ Use Make with a modular build configuration in `build/mk/` directory.
 - **Negative**: Limited compared to modern build tools, Windows compatibility issues
 - **Implementation**: Modular Makefiles with the help of documentation and target organization.
 
-## ADR-008: Cache-based Temporary Storage
+## ADR-009: Cache-based Temporary Storage
 
 **Context**: Need temporary storage for analysis results without a persistent database.
 
@@ -154,7 +181,7 @@ Use KeyDB cache for temporary result storage with TTL-based cleanup.
 - **Negative**: Results are temporary, no persistent audit trail
 - **Implementation**: KeyDB with configurable TTL for analysis results.
 
-## ADR-009: PostgreSQL for Persistent Storage with Versioning
+## ADR-010: PostgreSQL for Persistent Storage with Versioning
 
 **Context**: Need persistent storage for document data analysis with versioning capabilities to track changes over time.
 
@@ -209,10 +236,116 @@ Use HashiCorp Vault as the centralized secret management system for secure stora
 - **Integration**: Native integration with PostgreSQL, RabbitMQ, and other infrastructure components.
 - **Policy-based Access**: Fine-grained access control policies for different application components.
 
+### Implementation
+- **Vault cluster** with PostgreSQL backend, integrated with application services for dynamic secret retrieval.
+- **Periodic polling** mechanism for automatic configuration updates:
+  - Default 24-hour poll interval (configurable via `VAULT_POLL_INTERVAL`)
+  - Version-based change detection to avoid redundant reloads
+  - Automatic reload when secret version changes in Vault
+  - Combined with signal-based manual reload (SIGHUP) for immediate updates
+- **Authentication methods**: Support for token-based and AppRole authentication
+- **Secret versioning**: Tracks Vault secret versions to detect and apply changes
+
+### Configuration Reload Strategy
+1. **Automatic Periodic Polling**: Background ticker polls Vault at configured intervals
+2. **Version Comparison**: Compares current secret version with last loaded version
+3. **Conditional Reload**: Only reloads configuration when version changes detected
+4. **Manual Override**: SIGHUP signal triggers immediate reload regardless of version
+5. **Error Handling**: Non-blocking error reporting via dedicated error channel
+
 ### Consequences
-- **Positive**: Enhanced security, centralized secrets management, audit capabilities, credential rotation.
+- **Positive**: Enhanced security, centralized secrets management, audit capabilities, credential rotation, automatic configuration updates.
 - **Negative**: Additional infrastructure complexity, dependency on Vault availability, learning curve.
-- **Implementation**: Vault cluster with PostgreSQL backend, integrated with application services for dynamic secret retrieval.
+- **Trade-off**: Periodic polling adds minimal overhead for significant operational flexibility.
+
+## ADR-012: Hexagonal Architecture with CQRS Pattern
+
+**Context**: Need a maintainable, testable architecture that separates business logic from infrastructure concerns and optimizes read/write operations.
+
+### Decision
+Implement hexagonal architecture (ports and adapters) with CQRS (Command Query Responsibility Segregation) pattern and decorator-based cross-cutting concerns.
+
+### Rationale
+- **Separation of Concerns**: Clear boundaries between domain logic, application services, and infrastructure
+- **Testability**: Interface-based design allows easy mocking and unit testing
+- **Flexibility**: Easy to swap infrastructure implementations without affecting business logic
+- **CQRS Benefits**: Separate optimization of read and write operations
+- **Decorator Pattern**: Clean implementation of cross-cutting concerns (logging, metrics, tracing)
+- **Maintainability**: Clean code principles with early returns and minimal nesting
+
+### Implementation
+- **Ports**: Interface definitions in `internal/ports/` for repositories, services, and handlers
+- **Adapters**: Concrete implementations in `internal/adapters/` for infrastructure components
+- **Domain Layer**: Pure business logic in `internal/domain/` without external dependencies
+- **CQRS**: Separate command and query handlers in `internal/usecases/`
+- **Decorators**: Cross-cutting concerns in `internal/shared/decorators/`
+- **Repository Pattern**: Multiple implementations (PostgreSQL, KeyDB, Vault)
+
+### Consequences
+- **Positive**: Highly testable, maintainable, flexible, clear separation of concerns
+- **Negative**: More boilerplate code, steeper learning curve for new developers
+- **Trade-off**: Increased initial complexity for long-term maintainability gains
+
+## ADR-013: Content Hash Deduplication
+
+**Context**: Web pages may be analyzed multiple times with identical content, leading to unnecessary processing and storage costs.
+
+### Decision
+Implement SHA-256 hash-based content deduplication to detect and avoid reanalyzing identical page content.
+
+### Rationale
+- **Performance**: Eliminates redundant analysis processing for unchanged content
+- **Cost Efficiency**: Reduces storage requirements by reusing existing analysis results
+- **Resource Optimization**: Saves bandwidth and processing time for identical content
+- **User Experience**: Faster response times when content hasn't changed
+- **Data Integrity**: SHA-256 provides reliable content fingerprinting with minimal collision risk
+
+### Implementation
+- **Database Schema**: `content_hash` column (VARCHAR 64) in the analysis table for storing SHA-256 hashes
+- **Indexing**: Dedicated index `idx_analysis_content_hash` for efficient hash lookups
+- **URL Normalization**: Combined with `url_normalized` for effective deduplication
+- **Hash Computation**: SHA-256 hash calculated from fetched page content before analysis
+- **Lookup Strategy**: Check for existing hash before processing new analysis requests
+
+### Consequences
+- **Positive**: Significant performance improvement for repeat analyses, reduced storage costs, faster user responses
+- **Negative**: Additional hash computation overhead, potential edge cases with dynamic content
+- **Trade-off**: Slight computational cost for hashing balanced by major savings in analysis processing
+
+## ADR-014: Resilience and Fallback Mechanisms
+
+**Context**: Real-time features and dynamic configuration updates may fail due to network issues, service unavailability, or infrastructure problems, requiring graceful degradation.
+
+### Decision
+Implement polling-based fallback mechanisms for both frontend real-time updates and backend configuration management to ensure system resilience.
+
+### Rationale
+- **Reliability**: Ensures functionality even when preferred mechanisms (SSE, Vault) are unavailable
+- **User Experience**: Maintains seamless operation without user-visible failures
+- **Operational Flexibility**: Allows system to operate with degraded infrastructure
+- **Graceful Degradation**: Automatic fallback to alternative mechanisms without manual intervention
+- **Zero Downtime**: Configuration updates and status monitoring continue during partial failures
+
+### Implementation
+
+#### Frontend Polling Fallback (Real-time Updates)
+- **Primary Mechanism**: Server-Sent Events (SSE) for real-time analysis progress
+- **Fallback Strategy**: Automatic polling when SSE connection fails or is unavailable
+- **Trigger Conditions**: SSE connection errors, timeout failures, or unsupported environments
+- **Polling Interval**: Configurable interval (default: every few seconds)
+- **Seamless Transition**: Transparent fallback without user interaction required
+
+#### Backend Polling Strategy (Configuration Updates)
+- **Primary Mechanism**: Vault-based configuration with periodic polling
+- **Default Poll Interval**: 24 hours (configurable via `VAULT_POLL_INTERVAL`)
+- **Version-based Detection**: Only reloads when Vault secret version changes
+- **Manual Override**: SIGHUP signal for immediate reload regardless of schedule
+- **Error Handling**: Non-blocking error reporting continues operation during Vault unavailability
+
+### Consequences
+- **Positive**: Enhanced reliability, graceful degradation, improved user experience, operational resilience
+- **Negative**: Increased server load from polling, potential delays in updates compared to push mechanisms
+- **Trade-off**: Slight increase in resource usage for significant improvement in system availability and user experience
 
 ## System Architecture Diagrams
 
@@ -388,13 +521,125 @@ graph TB
     style M fill:#fff8e1
 ```
 
+## ADR-015: Testing Strategy and Framework
+
+**Context**: Need a comprehensive testing approach that ensures code quality, maintainability, and fast feedback cycles.
+
+### Decision
+Adopt testify framework with parallel test execution and mock-based unit testing strategy.
+
+### Rationale
+- **Parallel Execution**: Tests run concurrently for faster feedback (Go's `t.Parallel()`)
+- **Mock Framework**: testify/mock provides clean interface mocking for dependency isolation
+- **Rich Assertions**: testify/assert offers readable, expressive test assertions
+- **Suite Support**: testify/suite enables setup/teardown patterns for complex tests
+- **Industry Standard**: Widely adopted in Go ecosystem with excellent documentation
+- **Coverage Goals**: Support for comprehensive coverage metrics and reporting
+
+### Implementation
+- **Unit Tests**: All service layer and adapter tests with mocked dependencies
+- **Test Isolation**: Each test runs independently with `t.Parallel()`
+- **Mock Generation**: Interface-based mocking for repositories and services
+- **Table-Driven Tests**: Parameterized tests for multiple scenarios
+- **Coverage Tracking**: Continuous coverage monitoring with target thresholds
+
+### Consequences
+- **Positive**: Fast test execution, maintainable tests, clear test failures, easy mocking
+- **Negative**: Learning curve for testify framework, mock maintenance overhead
+- **Trade-off**: Mock boilerplate for improved test isolation and speed
+
+## ADR-016: Observability with OpenTelemetry
+
+**Context**: Need comprehensive observability across distributed services for debugging, performance monitoring, and operational insights.
+
+### Decision
+Implement distributed tracing and metrics collection using OpenTelemetry standard.
+
+### Rationale
+- **Vendor Neutral**: Avoid lock-in to specific observability vendors
+- **Industry Standard**: CNCF standard for observability instrumentation
+- **Distributed Tracing**: Track requests across HTTP API, Publisher, and Subscriber services
+- **Metrics Collection**: Custom metrics for business and technical insights
+- **Correlation**: Trace IDs connect logs, metrics, and traces
+- **Future-Proof**: Easy migration to any OpenTelemetry-compatible backend
+
+### Implementation
+- **Tracing**: Request tracing across all three services (HTTP API, Publisher, Subscriber)
+- **Context Propagation**: Trace context passed through HTTP headers and message queues
+- **Span Attributes**: Rich metadata for request parameters, results, and errors
+- **Metrics**: Custom business metrics (analysis count, duration) and system metrics
+- **Exporters**: Configurable exporters for different observability backends
+
+### Consequences
+- **Positive**: Complete request visibility, performance insights, debugging efficiency, vendor flexibility
+- **Negative**: Additional complexity, performance overhead, instrumentation maintenance
+- **Trade-off**: Slight performance cost for significant operational benefits
+
+## ADR-017: Structured Logging Strategy
+
+**Context**: Need efficient, queryable logging for debugging, monitoring, and compliance across distributed services.
+
+### Decision
+Implement structured JSON logging using zerolog for high-performance, zero-allocation logging.
+
+### Rationale
+- **Performance**: Zero-allocation design minimizes garbage collection pressure
+- **Structured Format**: JSON output enables log aggregation and querying
+- **Level Control**: Dynamic log level configuration per environment
+- **Context Enrichment**: Automatic context fields (trace ID, service name, timestamp)
+- **Cloud Native**: JSON format compatible with log aggregators (ELK, Datadog, CloudWatch)
+- **Developer Experience**: Chainable API for readable log statements
+
+### Implementation
+- **Log Levels**: debug, info, warn, error with environment-based configuration
+- **Correlation IDs**: Trace ID included in all log entries for request tracking
+- **Contextual Fields**: Service name, version, environment automatically added
+- **Error Logging**: Stack traces and error context for debugging
+- **Performance**: Conditional debug logging to avoid overhead in production
+
+### Consequences
+- **Positive**: High performance, structured queries, cloud-native compatibility, efficient debugging
+- **Negative**: JSON format less readable in local development, zerolog-specific API
+- **Trade-off**: Raw JSON output for significant performance and query benefits
+
+## Implementation Details
+
+This section documents specific library and tool choices that implement the architectural decisions above.
+
+### Go Ecosystem
+- **Go Version**: 1.25 with toolchain go1.25.1
+- **PostgreSQL Driver**: lib/pq for database connectivity
+- **Redis Client**: go-redis for KeyDB/Redis operations
+- **Configuration Parsing**: envconfig for environment variable loading
+- **Code Generation**: oapi-codegen v2 for OpenAPI to Go conversion
+
+### Testing Tools
+- **Testing Framework**: testify for assertions and mocking
+- **Mock Generation**: testify/mock for interface mocking
+- **Test Runner**: Go's native test runner with parallel execution
+
+### Observability Tools
+- **Tracing**: OpenTelemetry SDK for distributed tracing
+- **Logging**: zerolog for structured JSON logging
+- **Metrics**: OpenTelemetry metrics for custom instrumentation
+
+### Build and Development
+- **Build Tool**: GNU Make with modular Makefile organization
+- **SSL Certificates**: mkcert for local development SSL/TLS
+- **API Documentation**: Redocly CLI for OpenAPI bundling and validation
+- **Hot Reload**: Air for development hot-reloading (optional)
+
+### Infrastructure
+- **Message Protocol**: AMQP 0.9.1 for RabbitMQ communication
+- **Database Migrations**: Custom migration system with versioned SQL files
+- **Container Runtime**: Docker Engine with Docker Compose orchestration
+
 ## Future Considerations
 
 ### Potential Future ADRs
 - **Signed Requests and Responses**: Enhanced security through cryptographic signing of API requests and responses for data integrity and non-repudiation.
 - **Microservices Architecture**: If the application grows beyond a monolith.
 - **Kubernetes Deployment**: When container orchestration is needed.
-- **Monitoring and Observability**: Comprehensive monitoring strategy.
 - **Circuit Breaker Pattern**: For resilient external service calls.
 - **Event Sourcing**: Full event sourcing implementation for audit trails.
 - **CQRS Enhancement**: Separate read/write models for scalability.

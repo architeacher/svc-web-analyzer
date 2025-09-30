@@ -9,6 +9,23 @@
 
 A comprehensive web application that analyzes web pages and provides detailed insights about HTML structure, links, and forms.
 
+## Table of Contents
+
+- [Features](#features)
+- [User Interface](#user-interface)
+- [Quick Start](#quick-start)
+- [Configuration](#configuration)
+- [Documentation](#documentation)
+  - [Architecture & Design](#architecture--design)
+  - [API](#api)
+- [Architecture](#architecture)
+- [Technology Stack](#technology-stack)
+- [Code Generation](#code-generation)
+- [Security Features](#security-features)
+- [Testing](#testing)
+- [Development Tools](#development-tools)
+- [Project Status](#project-status)
+
 ## Features
 
 - **Web Page Analysis**: HTML version detection, title extraction, heading analysis, and form detection
@@ -16,65 +33,30 @@ A comprehensive web application that analyzes web pages and provides detailed in
 - **Real-time Updates**: Server-Sent Events for live progress tracking
 - **Secure API**: [PASETO](https://paseto.io/) token authentication with comprehensive security headers
 - **Multiple API Versioning**: URL path, header, and content type versioning strategies
-- **Complete Backend Implementation**: Fully functional Go backend with clean architecture
-- **Event-Driven Architecture**: Publisher/subscriber pattern with outbox pattern implementation
-- **CQS Pattern**: Command Query Separation with decorators
-- **Message Queue Integration**: RabbitMQ-based asynchronous processing
-- **Comprehensive Middleware**: Security, rate limiting, tracing, validation, and authentication
-- **Production Ready**: Full dependency injection, configuration management, and runtime dispatcher
 
-For complete feature documentation, see [Features Documentation](docs/features.md).
+## User Interface
 
-## Documentation
+The Web Analyzer provides a modern, intuitive web interface for analyzing web pages in real-time.
 
-### Architecture & Design
-- **[Architecture Decisions](docs/architecture-decisions.md)**: Comprehensive ADRs documenting all major architectural choices and their rationale
-- **[Features Documentation](docs/features.md)**: Detailed documentation of all implemented features, APIs, and capabilities
+![Web Analyzer UI](assets/web-analyzer-ui-screenshot.png "Web Analyzer UI")
 
-### API Documentation
-- **[OpenAPI Specification](docs/openapi-spec/web-analyzer-api.yaml)**: Complete OpenAPI 3.0.3 specification
-- **[Generated Documentation](https://docs.web-analyzer.dev)**: Interactive API documentation (available after running `make init`)
+### Accessing the UI
 
-## Architecture
+Once you have the services running (see [Quick Start](#quick-start)), access the web interface at:
 
-This project implements an **event-driven microservices architecture** with clean architecture principles, featuring three main services that communicate through message queues and shared data storage.
+**🌐 https://web-analyzer.dev**
 
-For detailed architecture information, see [Architecture Decisions](docs/architecture-decisions.md).
+### UI Features
 
-## Technology Stack
-
-### Backend
-- **Language**: Go 1.25 with clean architecture implementation
-- **Code Generation**: oapi-codegen for OpenAPI-to-Go conversion
-- **Authentication**: PASETO tokens with enhanced security validation
-- **API Specification**: OpenAPI 3.0.3 with comprehensive examples
-- **Build System**: Make with modular build configuration
-- **Database**: PostgreSQL with lib/pq driver and migrations
-- **Cache**: KeyDB with go-redis client
-- **Message Queue**: RabbitMQ with AMQP 0.9.1 protocol
-- **Event Sourcing**: Outbox pattern with PostgreSQL event store
-- **Logging**: Structured logging with zerolog
-- **Testing**: Testify framework with parallel execution and comprehensive coverage
-- **Observability**: OpenTelemetry for distributed tracing and metrics
-- **Secret Management**: HashiCorp Vault integration
-- **Configuration**: Environment-based configuration with envconfig
-- **Architecture**: Clean architecture with ports/adapters, CQS, event-driven design, and dependency injection
-- **Middleware**: Complete middleware stack (security, auth, validation, rate limiting, tracing)
-- **Runtime**: Production-ready application dispatcher with graceful shutdown
-- **Services**: Separate publisher and subscriber services for scalable message processing
-
-### API Design
-- **Specification**: OpenAPI 3.0.3 with detailed schemas and examples
-- **Versioning**: Multiple strategies (URL path `/v1/`, headers, content type)
-- **Real-time**: Server-Sent Events for analysis progress
-- **Security**: Complete security headers and PASETO authentication
-- **Documentation**: Auto-generated from OpenAPI specification
-
-### Infrastructure
-- **Containerization**: Docker with multi-stage builds
-- **Reverse Proxy**: Traefik with automatic SSL/TLS
-- **Local Development**: SSL certificate generation with mkcert
-- **Documentation**: Redocly CLI for API bundling and validation
+- **URL Analysis**: Enter any URL to analyze its HTML structure, links, and forms
+- **Real-time Progress**: Live updates via Server-Sent Events as analysis progresses
+- **Interactive Results**: View detailed analysis results including:
+  - HTML version and page title
+  - Heading structure (H1-H6 counts)
+  - Link analysis (internal/external, accessibility)
+  - Form detection and analysis
+- **Modern Design**: Responsive interface built with Vue.js and Tailwind CSS
+- **Secure Authentication**: Integrated PASETO token authentication
 
 ## Quick Start
 
@@ -138,11 +120,12 @@ Before running the application, ensure you have the following installed:
    ```
 
 3. **Access the application**
-    - **API**: https://api.web-analyzer.dev/v1/ (API documentation)
-    - **Documentation**: https://docs.web-analyzer.dev
+    - **Web UI**: https://web-analyzer.dev (Main application interface)
+    - **API**: https://api.web-analyzer.dev/v1/ (REST API endpoints)
+    - **API Documentation**: https://docs.web-analyzer.dev (Interactive Swagger UI)
     - **Traefik Dashboard**: https://traefik.web-analyzer.dev (admin/admin)
-    - **Vault**: https://vault.web-analyzer.dev
-    - **RabbitMQ**: https://rabbitmq.web-analyzer.dev
+    - **Vault**: https://vault.web-analyzer.dev (Token: see .envrc)
+    - **RabbitMQ Management**: https://rabbitmq.web-analyzer.dev (admin/bottom.Secret)
 
 ### Environment Variables
 
@@ -163,70 +146,138 @@ Key environment variables:
 ### Development Commands
 
 ```bash
-# Initialize project (hosts, SSL certs, API generation)
+# Initialize project (environment, hosts, SSL certs, dependencies, API generation)
 make init
 
-# Start development services
+# Start all development services with Docker Compose
 make start
 
-# Stop and remove development services
+# Restart Docker containers without recreating
+make restart
+
+# Stop and remove all development containers
 make destroy
 
-# Generate SSL certificates for local development
+# Generate SSL certificates for local development (*.web-analyzer.dev)
 make certify
+
+# Install mkcert and prepare for certification
+make study
 
 # Generate API code from OpenAPI specification
 make generate-api
 
-# Create new database migration
+# Create new database migration (requires migration_name parameter)
 make create-migration migration_name=<name>
 
-# Run all tests
+# Run all tests with race detection
 make test
 
-# Update local hosts
+# Update /etc/hosts with local domains
 make set-hosts
 
-# View all available targets
+# View all available targets with descriptions
 make help
 
-# List all targets
+# List all available targets
 make list
 
-# Default target
+# Run default target (shows help)
 make default
-
-# Study mode (certification preparation)
-make study
 ```
 
-### Three-Service Architecture
+**Common Workflows:**
 
-1. **HTTP API Service**: Handles REST endpoints and real-time updates
-2. **Publisher Service**: Manages event publishing with outbox pattern
-3. **Subscriber Service**: Processes web page analysis asynchronously
+```bash
+# First-time setup
+make init start
 
-For detailed service architecture and communication patterns, see [Architecture Decisions](docs/architecture-decisions.md).
+# Daily development
+make start          # Start services
+make test           # Run tests
+make restart        # Restart after changes
 
-## API Documentation
+# Add database changes
+make create-migration migration_name=add_new_feature
 
-The API is fully documented using OpenAPI 3.0.3 specification with comprehensive examples.
+# Clean up
+make destroy        # Stop and remove all containers
+```
 
-- **API Specification**: [docs/openapi-spec/svc-web-analyzer-api.yaml](docs/openapi-spec/svc-web-analyzer-api.yaml)
-- **Generated Bundle**: [docs/openapi-spec/public/svc-web-analyzer-swagger-v1.json](docs/openapi-spec/public/svc-web-analyzer-swagger-v1.json)
-- **Documentation**: https://docs.web-analyzer.dev (after running `make init`)
+## Configuration
+
+The application is configured using environment variables. See `.envrc.dist` for available configuration options.
+
+### Configuration Management
+
+The application supports runtime configuration management through multiple mechanisms:
+
+#### 1. Automatic Periodic Polling
+When Vault is enabled, the application automatically polls for configuration changes at regular intervals:
+
+- **Default Poll Interval**: 24 hours (configurable via `VAULT_POLL_INTERVAL`)
+- **Automatic Detection**: Only reloads when Vault secret version changes
+- **Zero Downtime**: Configuration updates apply without service restart
+- **Version Tracking**: Prevents redundant reloads using secret version comparison
+
+**Configuration:**
+```bash
+# Set custom poll interval (e.g., 5 minutes)
+export VAULT_POLL_INTERVAL=5m
+
+# Disable automatic polling (set to 0)
+export VAULT_POLL_INTERVAL=0
+```
+
+The polling mechanism checks Vault's secret metadata for version changes before reloading, ensuring efficient operation with minimal overhead.
+
+#### 2. Manual Reload (SIGHUP)
+To manually reload the configuration while the application is running, send a `SIGHUP` signal:
+
+```bash
+docker compose kill -s HUP <service_name>
+```
+
+The application will reload its configuration from environment variables and Vault without downtime.
+
+#### 3. Dump Configuration (SIGUSR1)
+To dump the current configuration to stdout for debugging, send a `SIGUSR1` signal:
+
+```bash
+docker compose kill -s USR1 <service_name>
+```
+
+The current configuration will be output as formatted JSON to stdout.
+
+### Local Development
+The project includes a complete local development setup:
+- **SSL Certificates**: Automatic generation with mkcert
+- **Local Domains**: `*.web-analyzer.dev` configured in `/etc/hosts`
+- **Reverse Proxy**: Traefik configuration for service routing
+- **Docker Compose**: Multi-service development environment
+
+## Documentation
+
+### Architecture & Design
+- **[Architecture Decisions](docs/architecture-decisions.md)**: Comprehensive ADRs documenting all major architectural choices and their rationale
+- **[Features Documentation](docs/features.md)**: Detailed documentation of all implemented features, APIs, and capabilities
+
+### API
+- **[OpenAPI Specification](docs/openapi-spec/svc-web-analyzer-api.yaml)**: Complete OpenAPI 3.0.3 specification
+- **[Generated Bundle](docs/openapi-spec/public/svc-web-analyzer-swagger-v1.json)**: Bundled JSON specification
+- **[Interactive Documentation](https://docs.web-analyzer.dev)**: Auto-generated API docs (available after running `make init`)
 - **API Endpoint**: https://api.web-analyzer.dev/v1/
 
-### Core Endpoints
+#### Core Endpoints
 
 - `POST /v1/analyze` - Submit URL for analysis
 - `GET /v1/analysis/{analysisId}` - Get analysis result
 - `GET /v1/analysis/{analysisId}/events` - Real-time progress (SSE)
 - `GET /v1/health` - Health check endpoint
 
-### API Examples
+#### API Examples
 
-#### Health Check
+##### Health Check
 
 ```bash
 curl -s https://api.web-analyzer.dev/v1/health | jq
@@ -259,7 +310,7 @@ curl -s https://api.web-analyzer.dev/v1/health | jq
 }
 ```
 
-#### Submit URL for Analysis
+##### Submit URL for Analysis
 
 **Testing with github.com:**
 ```bash
@@ -279,7 +330,7 @@ curl https://api.web-analyzer.dev/v1/analyze \
 }
 ```
 
-#### Get Analysis Result
+##### Get Analysis Result
 
 ```bash
 curl https://api.web-analyzer.dev/v1/analysis/50192680-b80f-49b8-855f-8a525b08ef72 \
@@ -298,7 +349,7 @@ curl https://api.web-analyzer.dev/v1/analysis/50192680-b80f-49b8-855f-8a525b08ef
 
 > **Note:** The analysis is queued for processing. The endpoint successfully authenticates with PASETO v4 tokens and queues the analysis. Processing status will update as the analysis progresses through different stages.
 
-#### Real-time Progress (Server-Sent Events)
+##### Real-time Progress (Server-Sent Events)
 
 The API provides real-time progress updates for analysis operations through Server-Sent Events (SSE). This allows clients to track the progress of long-running analysis tasks and provide live feedback to users.
 
@@ -313,23 +364,23 @@ curl https://api.web-analyzer.dev/v1/analysis/50192680-b80f-49b8-855f-8a525b08ef
 
 **SSE Event Stream Example:**
 ```
-event: progress
-data: {"stage": "queued", "progress": 0, "message": "Analysis queued", "timestamp": "2025-09-28T16:09:49.353Z"}
+event: analysis_started
+data: {"analysis_id":"2e4085c8-9bbd-45c0-83a8-e6cf4f22a417","url":"https://github.com/login","status":"requested","created_at":"2025-09-29T15:53:21.406064Z"}
 
-event: progress
-data: {"stage": "fetching", "progress": 20, "message": "Fetching web page", "timestamp": "2025-09-28T16:09:50.123Z"}
+event: analysis_progress
+data: {"analysis_id":"2e4085c8-9bbd-45c0-83a8-e6cf4f22a417","url":"https://github.com/login","status":"requested","created_at":"2025-09-29T15:53:21.406064Z"}
 
-event: progress
-data: {"stage": "parsing_html", "progress": 50, "message": "Parsing HTML structure", "timestamp": "2025-09-28T16:09:51.456Z"}
+event: heartbeat
+data: {}
 
-event: progress
-data: {"stage": "analyzing_links", "progress": 75, "message": "Analyzing links", "timestamp": "2025-09-28T16:09:52.789Z"}
+event: analysis_progress
+data: {"analysis_id":"2e4085c8-9bbd-45c0-83a8-e6cf4f22a417","url":"https://github.com/login","status":"requested","created_at":"2025-09-29T15:53:21.406064Z"}
 
-event: completed
-data: {"stage": "completed", "progress": 100, "message": "Analysis completed", "timestamp": "2025-09-28T16:09:53.123Z", "analysis_id": "52d22202-b31c-498f-855d-c1effd079ec1"}
+event: analysis_completed
+data: {"analysis_id":"20e1e0e2-b9c0-438e-a2ad-cbd57e8f372a","url":"https://github.com/login","status":"completed","content_hash":"81cabd88deaf3c4fc58aa3d5550c526d153db9a37994d1d02c1a21898ce775d5","content_size":44598,"created_at":"2025-10-03T08:00:14.563951Z","completed_at":"2025-10-03T08:00:17.378845Z","duration":2815000000,"results":{"html_version":"HTML5","title":"Sign in to GitHub · GitHub","heading_counts":{"h1":1,"h2":0,"h3":1,"h4":0,"h5":0,"h6":0},"links":{"internal_count":2,"external_count":4,"total_count":6,"inaccessible_links":null},"forms":{"total_count":1,"login_forms_detected":1,"login_form_details":[{"method":"POST","action":"https://github.com/session","fields":["authenticity_token","add_account","login","password","webauthn-conditional","javascript-support","webauthn-support","webauthn-iuvpaa-support","return_to","allow_signup","client_id","integration","required_field_061e","timestamp","timestamp_secret","commit"]}]}}}
 
-event: error
-data: {"stage": "error", "progress": 0, "message": "Failed to fetch web page: connection timeout", "timestamp": "2025-09-28T16:09:54.456Z", "error_code": "FETCH_TIMEOUT"}
+event: analysis_error
+data: {"error": "failed to fetch events"}
 ```
 
 **Event Types:**
@@ -346,7 +397,7 @@ data: {"stage": "error", "progress": 0, "message": "Failed to fetch web page: co
 - **Authentication**: PASETO token required in Authorization header
 - **CORS**: Configured for cross-origin SSE connections
 
-### Authentication
+#### Authentication
 
 > **Note:** Authentication is required for all endpoints except `/v1/health`. The API supports both PASETO v4 and custom token formats.
 
@@ -364,16 +415,74 @@ v4.public.eyJhdWQiOiJ3ZWItYW5hbHl6ZXItYXBpIiwiZXhwIjoiMjA2My0wOS0xOFQwMjoyMDoxNy
 **About PASETO:**
 [PASETO (Platform-Agnostic Security Tokens)](https://paseto.io/) provides secure, authenticated tokens with Ed25519 signatures for v4 public tokens. The implementation supports both standard PASETO v4 tokens and backward-compatible custom formats.
 
-## Configuration
+## Architecture
 
-The application is configured using environment variables. See `.envrc.dist` for available configuration options.
+This project implements an **event-driven microservices architecture** with **hexagonal architecture (ports and adapters)** principles, featuring three main services that communicate through message queues and shared data storage.
 
-### Local Development
-The project includes a complete local development setup:
-- **SSL Certificates**: Automatic generation with mkcert
-- **Local Domains**: `*.web-analyzer.dev` configured in `/etc/hosts`
-- **Reverse Proxy**: Traefik configuration for service routing
-- **Docker Compose**: Multi-service development environment
+### Project Structure
+
+```
+svc-web-analyzer/
+├── assets/                           # Project assets and branding
+├── build/                            # Build system and configuration
+│   ├── mk/                           # Make-based build system (Makefile, utils, config)
+│   └── oapi/                         # OpenAPI code generation config
+├── cmd/                              # Application entry points
+│   ├── publisher/                    # Publisher service entry point
+│   ├── subscriber/                   # Subscriber service entry point
+│   └── svc-web-analyzer/             # Main HTTP API service entry point
+├── deployments/                      # Deployment configurations
+│   └── docker/                       # Docker setup (Dockerfile, Traefik, Vault, Air configs)
+├── docs/                             # Documentation and specifications
+│   └── openapi-spec/                 # OpenAPI 3.0.3 specification (schemas, examples, public docs)
+├── internal/                         # Private application packages
+│   ├── adapters/                     # Infrastructure adapters (repositories, services, middleware)
+│   ├── config/                       # Configuration management (loader, settings)
+│   ├── domain/                       # Domain models and business logic
+│   ├── handlers/                     # HTTP handlers implementation (generated code)
+│   ├── infrastructure/               # Infrastructure implementations (cache, logger, metrics, queue, storage, tracing)
+│   ├── ports/                        # Interface definitions (clean architecture)
+│   ├── runtime/                      # Application bootstrap and dependency injection
+│   ├── service/                      # Application service layer
+│   ├── shared/                       # Shared cross-cutting concerns (decorators)
+│   ├── tools/                        # Code generation tools
+│   └── usecases/                     # Application use cases (CQRS commands/queries)
+├── migrations/                       # Database migration files
+├── pkg/                              # Public packages
+│   └── queue/                        # RabbitMQ queue package
+├── scripts/                          # Build and utility scripts
+├── web/                              # Frontend application (Vanilla JS, HTML, CSS)
+│   └── src/                          # Frontend source files
+├── compose.yaml                      # Docker Compose multi-service configuration
+├── go.mod                            # Go module definition and dependencies
+└── go.sum                            # Go module checksums for dependency verification
+```
+
+### Three-Service Architecture
+
+1. **HTTP API Service**: Handles REST endpoints and real-time updates
+2. **Publisher Service**: Manages event publishing with an outbox pattern
+3. **Subscriber Service**: Processes web page analysis asynchronously
+
+For detailed service architecture and communication patterns, see [Architecture Decisions](docs/architecture-decisions.md).
+
+## Technology Stack
+
+### Backend
+- **Language**: Go 1.25
+- **API Specification**: OpenAPI 3.0.3
+- **Authentication**: PASETO tokens
+- **Database**: PostgreSQL
+- **Cache**: KeyDB
+- **Message Queue**: RabbitMQ
+- **Secret Management**: HashiCorp Vault
+
+### Infrastructure
+- **Containerization**: Docker with Docker Compose
+- **Reverse Proxy**: Traefik with SSL/TLS
+- **Local Development**: mkcert for SSL certificates
+
+For detailed architecture decisions and implementation details, see [Architecture Decisions](docs/architecture-decisions.md).
 
 ## Code Generation
 
@@ -396,6 +505,7 @@ The project uses a code-first approach with OpenAPI specification:
 - **Security Headers**: Complete set of standard security headers
 - **CORS Configuration**: Configurable cross-origin resource sharing
 - **Input Validation**: Schema-based validation from OpenAPI specification
+- **Rate Limiting**: Protection against abuse with configurable request limits
 
 ## Testing
 
@@ -436,45 +546,43 @@ go test -parallel 8 ./...
 - **API Documentation**: Auto-generated from OpenAPI specification
 - **Testing Framework**: Testify for assertions and mocking
 
-## TODOs
+## Project Status
 
-### Testing & Quality
-- **Increase Test Coverage**: Expand unit and integration test coverage across all layers
-    - Add comprehensive tests for domain entities and business logic
-    - Implement integration tests for API endpoints
-    - Add middleware and adapter layer testing
-    - Target 80%+ code coverage across the codebase
+### Completed Features ✅
+- **Event-Driven Architecture**: Publisher/subscriber pattern with RabbitMQ
+- **Outbox Pattern**: Transactional outbox for reliable message delivery
+- **Three-Service Architecture**: HTTP API, Publisher, and Subscriber services
+- **Complete Backend**: Clean architecture with ports/adapters pattern
+- **CQRS Implementation**: Separate command and query handlers with decorators
+- **Repository Pattern**: PostgreSQL, KeyDB cache, and Vault implementations
+- **Comprehensive Testing**: Unit tests with parallel execution for all layers
+- **Real-time Updates**: Server-Sent Events (SSE) for analysis progress
+- **PASETO Authentication**: Secure token-based authentication
+- **Database Migrations**: Automated schema management
+- **Docker Deployment**: Complete containerization with Traefik
+- **SSL/TLS Setup**: Local development certificates with mkcert
+- **API Documentation**: Auto-generated from OpenAPI 3.0.3 specification
 
-### Performance & Scalability
-- **Background Job Processing**: Implement queue-based analysis processing
-    - Integrate message queue system (Redis Queue, RabbitMQ, or similar)
-    - Move web page analysis to background workers
-    - Implement job status tracking and progress updates
-    - Add retry mechanisms for failed analysis jobs
+### Future Enhancements 🚀
 
-- **Content Deduplication**: Optimize analysis efficiency with content hashing
-    - Calculate SHA-256 hash of HTML content
-    - Store hash-to-analysis mapping to avoid duplicate processing
-    - Implement cache lookup before initiating new analysis
-    - Return cached results for identical content
+#### Testing & Quality
+- **Integration Tests**: End-to-end API endpoint testing
+- **Performance Tests**: Load testing for analysis workflows
+- **Target Coverage**: 80%+ code coverage across all layers
 
-### Code Quality & Architecture
-- **Refactoring Improvements**
-    - Extract common patterns into reusable components
-    - Simplify complex adapter implementations
-    - Improve error handling consistency across layers
-    - Optimize dependency injection and configuration management
-    - Review and consolidate middleware implementations
-    - Adding linting rules
+#### Performance & Scalability
+- **Horizontal Scaling**: Load balancing for publisher/subscriber services
+- **Caching Strategy**: Enhanced cache warming and invalidation
 
-### Observability & Maintainability
-- **Enhanced Analysis Features**
-    - Metrics and monitoring integration
-    - Performance metrics collection
-    - Security vulnerability detection
+#### Code Quality & Architecture
+- **Linting Rules**: golangci-lint integration with CI/CD
+- **Code Refactoring**: Extract common patterns and simplify adapters
+- **Error Handling**: Consistent error handling across all layers
 
-- **Operational Improvements**
-    - CI/CD pipeline
-    - K8s deployment
+#### Observability & Operations
+- **Metrics Integration**: Prometheus metrics for monitoring
+- **Performance Monitoring**: APM integration for bottleneck detection
+- **CI/CD Pipeline**: Automated testing and deployment
+- **Kubernetes Deployment**: Production-ready K8s manifests
 
-These improvements will enhance the application's reliability, performance, and maintainability while reducing operational overhead.
+These enhancements will further improve reliability, performance, and operational excellence.

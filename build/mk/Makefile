@@ -29,6 +29,8 @@ ENV_FILE := .envrc
 DOT_ENV := .env
 CERTS_DIR := ".certs"
 
+MOCKS_DIR := internal/mocks
+
 .PHONY: $(ENV_FILE) $(DOT_ENV)
 $(ENV_FILE) $(DOT_ENV):
 	cat .envrc.dist | tee "$(ENV_FILE)" "$(DOT_ENV)" > /dev/null
@@ -58,6 +60,14 @@ start: ## 🐳 Start the Docker containers.
 		-d \
         --force-recreate
 
+.PHONY: restart
+restart: ## 🐳 Restart the Docker containers.
+	$(call printMessage,"♻️  Restarting containers",$(INFO_CLR))
+	docker compose \
+		--profile development \
+		-f compose.yaml \
+		restart
+
 .PHONY: destroy
 destroy: ## 🐳 Destroy Docker containers.
 	$(call printMessage,"💣  Destroying containers",$(INFO_CLR))
@@ -85,12 +95,25 @@ generate-api:
 	docker run --rm -v $(PWD):/spec redocly/cli:2.2.0 bundle ./docs/openapi-spec/svc-web-analyzer-api.yaml -d --output ./docs/openapi-spec/public/svc-web-analyzer-swagger-v1.json --ext json --config .redocly.yaml && \
 	cd internal/tools && go generate ./...
 
+$(MOCKS_DIR):
+	$(call printMessage,"🎭  Generating mocks",$(INFO_CLR))
+	GOFLAGS="-mod=mod" go generate ./internal/ports/...
+
+.PHONY: generate-mocks
+generate-mocks: $(MOCKS_DIR) ## 🎭 Generate test mocks from interfaces (only if needed).
+
+.PHONY: generate-mocks-force
+generate-mocks-force: ## 🎭 Force regenerate test mocks from interfaces.
+	$(call printMessage,"🎭  Force regenerating mocks",$(INFO_CLR))
+	rm -rf "${MOCKS_DIR}"
+	$(MAKE) generate-mocks
+
 .PHONY: create-migration
 create-migration: ## 🗂️ Creates migration files based on a passed argument "migration_name".
 	$(call printMessage,"🗃️  Creating migration",$(INFO_CLR))
 	docker compose run --name migrate-this --rm -it migrate create -ext sql -dir migrations "${migration_name}"
 
 .PHONY: test
-test: ## 🏃Run tests with race flag 🏁
+test: generate-mocks ## 🏃Run tests with race flag 🏁
 	$(call printMessage,"🕸️  Running tests",$(INFO_CLR))
-	go test -v -race ./...
+	GOFLAGS="-mod=mod" go test -v -race ./...

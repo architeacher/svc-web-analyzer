@@ -10,7 +10,7 @@ import (
 )
 
 type (
-	Application struct {
+	WebApplication struct {
 		Commands Commands
 		Queries  Queries
 	}
@@ -28,22 +28,32 @@ type (
 	}
 )
 
-func NewApplication(
+func NewWebApplication(
 	appService service.ApplicationService,
 	logger *infrastructure.Logger,
 	tracerProvider otelTrace.TracerProvider,
 	metricsClient decorator.MetricsClient,
-) Application {
-	return Application{
+) *WebApplication {
+	return &WebApplication{
 		Commands: Commands{
 			AnalyzeCommandHandler: commands.NewAnalyzeCommandHandler(appService, logger, tracerProvider, metricsClient),
 		},
 		Queries: Queries{
-			FetchAnalysisQueryHandler:        queries.NewFetchAnalysisQueryHandler(appService, logger, tracerProvider, metricsClient),
-			FetchAnalysisEventsQueryHandler:  queries.NewFetchAnalysisEventsQueryHandler(appService, logger, tracerProvider, metricsClient),
-			FetchReadinessReportQueryHandler: queries.NewFetchReadinessReportQueryHandler(appService, logger, tracerProvider, metricsClient),
-			FetchLivenessReportQueryHandler:  queries.NewFetchLivenessReportQueryHandler(appService, logger, tracerProvider, metricsClient),
-			FetchHealthReportQueryHandler:    queries.NewFetchHealthReportQueryHandler(appService, logger, tracerProvider, metricsClient),
+			FetchAnalysisQueryHandler: queries.NewFetchAnalysisQueryHandler(
+				appService, logger, tracerProvider, metricsClient,
+			),
+			FetchAnalysisEventsQueryHandler: queries.NewFetchAnalysisEventsQueryHandler(
+				appService, logger, tracerProvider, metricsClient,
+			),
+			FetchReadinessReportQueryHandler: queries.NewFetchReadinessReportQueryHandler(
+				appService, logger, tracerProvider, metricsClient,
+			),
+			FetchLivenessReportQueryHandler: queries.NewFetchLivenessReportQueryHandler(
+				appService, logger, tracerProvider, metricsClient,
+			),
+			FetchHealthReportQueryHandler: queries.NewFetchHealthReportQueryHandler(
+				appService, logger, tracerProvider, metricsClient,
+			),
 		},
 	}
 }

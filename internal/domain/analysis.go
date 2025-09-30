@@ -29,19 +29,16 @@ const (
 	EventTypeCompleted Event = "analysis_completed"
 	EventTypeFailed    Event = "analysis_failed"
 
-	// Outbox status constants
 	OutboxStatusPending    OutboxStatus = "pending"
 	OutboxStatusProcessing OutboxStatus = "processing"
 	OutboxStatusPublished  OutboxStatus = "published"
 	OutboxStatusFailed     OutboxStatus = "failed"
 
-	// Priority constants
 	PriorityLow    Priority = "low"
 	PriorityNormal Priority = "normal"
 	PriorityHigh   Priority = "high"
 	PriorityUrgent Priority = "urgent"
 
-	// Outbox event types
 	OutboxEventAnalysisRequested OutboxEventType = "analysis.requested"
 	OutboxEventAnalysisRetry     OutboxEventType = "analysis.retry"
 )
@@ -60,11 +57,14 @@ type (
 		ID          uuid.UUID      `json:"analysis_id"`
 		URL         string         `json:"url"`
 		Status      AnalysisStatus `json:"status"`
+		ContentHash string         `json:"content_hash,omitempty"`
+		ContentSize int64          `json:"content_size,omitempty"`
 		CreatedAt   time.Time      `json:"created_at"`
 		CompletedAt *time.Time     `json:"completed_at,omitempty"`
 		Duration    *time.Duration `json:"duration,omitempty"`
 		Results     *AnalysisData  `json:"results,omitempty"`
 		Error       *AnalysisError `json:"error,omitempty"`
+		LockVersion int            `json:"-"`
 	}
 
 	AnalysisData struct {
@@ -149,27 +149,29 @@ type (
 	}
 
 	AnalysisEvent struct {
-		Type    Event       `json:"type"`
-		Data    interface{} `json:"data"`
-		EventID string      `json:"event_id"`
+		Type    Event  `json:"type"`
+		Payload any    `json:"payload"`
+		EventID string `json:"event_id"`
 	}
 
 	// OutboxEvent domain models
 	OutboxEvent struct {
-		ID                  uuid.UUID       `json:"id"`
-		AggregateID         uuid.UUID       `json:"aggregate_id"`
-		AggregateType       string          `json:"aggregate_type"`
-		EventType           OutboxEventType `json:"event_type"`
-		Priority            Priority        `json:"priority"`
-		RetryCount          int             `json:"retry_count"`
-		MaxRetries          int             `json:"max_retries"`
-		Status              OutboxStatus    `json:"status"`
-		Payload             interface{}     `json:"payload"`
-		ErrorDetails        *string         `json:"error_details,omitempty"`
-		CreatedAt           time.Time       `json:"created_at"`
-		PublishedAt         *time.Time      `json:"published_at,omitempty"`
-		ProcessingStartedAt *time.Time      `json:"processing_started_at,omitempty"`
-		NextRetryAt         *time.Time      `json:"next_retry_at,omitempty"`
+		ID            uuid.UUID       `json:"id"`
+		AggregateID   uuid.UUID       `json:"aggregate_id"`
+		AggregateType string          `json:"aggregate_type"`
+		EventType     OutboxEventType `json:"event_type"`
+		Priority      Priority        `json:"priority"`
+		RetryCount    int             `json:"retry_count"`
+		MaxRetries    int             `json:"max_retries"`
+		Status        OutboxStatus    `json:"status"`
+		Payload       any             `json:"payload"`
+		ErrorDetails  *string         `json:"error_details,omitempty"`
+		CreatedAt     time.Time       `json:"created_at"`
+		StartedAt     *time.Time      `json:"started_at,omitempty"`
+		PublishedAt   *time.Time      `json:"published_at,omitempty"`
+		ProcessedAt   *time.Time      `json:"processed_at,omitempty"`
+		CompletedAt   *time.Time      `json:"completed_at,omitempty"`
+		NextRetryAt   *time.Time      `json:"next_retry_at,omitempty"`
 	}
 
 	// AnalysisRequestPayload represents the payload for analysis request events
@@ -179,5 +181,19 @@ type (
 		Options    AnalysisOptions `json:"options"`
 		Priority   Priority        `json:"priority"`
 		CreatedAt  time.Time       `json:"created_at"`
+	}
+
+	// ProcessAnalysisMessageResult represents the result of processing an analysis message
+	ProcessAnalysisMessageResult struct {
+		Success      bool
+		ContentHash  string
+		ErrorCode    string
+		ErrorMessage string
+	}
+
+	// PublishOutboxEventResult represents the result of publishing an outbox event
+	PublishOutboxEventResult struct {
+		Published bool
+		Error     string
 	}
 )

@@ -27,6 +27,6 @@ func (s VaultRepository) GetSecrets(ctx context.Context, path string) (*api.Secr
 	return s.vaultClient.Logical().ReadWithContext(ctx, path)
 }
 
-func (s VaultRepository) WriteWithContext(ctx context.Context, path string, data map[string]interface{}) (*api.Secret, error) {
+func (s VaultRepository) WriteWithContext(ctx context.Context, path string, data map[string]any) (*api.Secret, error) {
 	return s.vaultClient.Logical().WriteWithContext(ctx, path, data)
 }
