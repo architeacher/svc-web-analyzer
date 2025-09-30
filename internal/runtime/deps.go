@@ -6,53 +6,77 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/architeacher/svc-web-analyzer/internal/adapters"
+	"github.com/architeacher/svc-web-analyzer/internal/adapters/http/handlers"
 	"github.com/architeacher/svc-web-analyzer/internal/adapters/middleware"
 	"github.com/architeacher/svc-web-analyzer/internal/config"
 	"github.com/architeacher/svc-web-analyzer/internal/domain"
-	"github.com/architeacher/svc-web-analyzer/internal/handlers"
 	"github.com/architeacher/svc-web-analyzer/internal/infrastructure"
 	"github.com/architeacher/svc-web-analyzer/internal/ports"
-	"github.com/architeacher/svc-web-analyzer/internal/service"
 	"github.com/architeacher/svc-web-analyzer/internal/usecases"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/hashicorp/vault/api"
-	"go.opentelemetry.io/otel"
 )
 
 type (
+	Applications struct {
+		Web        *usecases.WebApplication
+		Publisher  *usecases.PublisherApplication
+		Subscriber *usecases.SubscriberApplication
+	}
+
+	ApplicationWorkers struct {
+		OutboxProcessor ports.BackgroundProcessor
+		AnalysisWorker  ports.MessageHandler
+	}
+
+	TracerShutdownFunc func(ctx context.Context) error
+
 	InfrastructureDeps struct {
-		SecretStorageClient ports.SecretsRepository
 		HTTPServer          *http.Server
-		StorageClient       infrastructure.Storage
+		SecretStorageClient *api.Client
+		StorageClient       *infrastructure.Storage
 		QueueClient         infrastructure.Queue
 		CacheClient         *infrastructure.KeydbClient
+		Metrics             infrastructure.Metrics
 	}
 
 	DomainServices struct {
-		WebFetcher   ports.WebPageFetcher
+		WebFetcher   ports.WebFetcher
 		HTMLAnalyzer domain.HTMLAnalyzer
 		LinkChecker  ports.LinkChecker
 	}
 
+	Repos struct {
+		SecretStorageRepo ports.SecretsRepository
+		AnalysisRepo      ports.AnalysisRepository
+		OutboxRepo        ports.OutboxRepository
+		CacheRepo         ports.CacheRepository
+	}
+
 	Dependencies struct {
-		cfg    *config.ServiceConfig
-		logger *infrastructure.Logger
+		Apps    Applications
+		Workers ApplicationWorkers
+
+		cfg          *config.ServiceConfig
+		configLoader *config.Loader
+
+		logger infrastructure.Logger
+
+		Infra          InfrastructureDeps
+		DomainServices DomainServices
+		Repos          Repos
 
 		tracerShutdownFunc TracerShutdownFunc
-
-		Infra InfrastructureDeps
-
-		DomainServices DomainServices
+		secretVersion      uint
 	}
 )
 
-func initializeDependencies(ctx context.Context) (*Dependencies, error) {
+func initializeDependencies(ctx context.Context, opts ...DependencyOption) (*Dependencies, error) {
 	cfg, err := config.Init()
 	if err != nil {
-		panic(fmt.Errorf("unable to load service configuration: %w", err))
+		return nil, fmt.Errorf("unable to load service configuration: %w", err)
 	}
 
 	appLogger := infrastructure.New(config.LoggingConfig{
@@ -62,100 +86,40 @@ func initializeDependencies(ctx context.Context) (*Dependencies, error) {
 
 	appLogger.Info().Msg("initializing dependencies...")
 
-	tracerShutdownFunc, err := initGlobalTracing(ctx, cfg)
-	if err != nil {
-		appLogger.Error().Err(err).Msg("failed to initialize global tracer")
+	deps := &Dependencies{
+		cfg:    cfg,
+		logger: appLogger,
 	}
 
-	secretStorageClient, err := createVaultClient(cfg.SecretStorage)
-	if err != nil {
-		appLogger.Fatal().Err(err).Msg("unable to create vault client")
-	}
+	// Start with default options and append any additional options.
+	options := append(defaultOptions(ctx), opts...)
 
-	storageRepo := adapters.NewVaultRepository(secretStorageClient)
-	if cfg.SecretStorage.Enabled {
-		if err := config.Load(ctx, storageRepo, cfg); err != nil {
-			appLogger.Fatal().Err(err).Msg("unable to load service configuration")
+	for _, opt := range options {
+		if err := opt(deps); err != nil {
+			return nil, fmt.Errorf("failed to apply dependency option: %w", err)
 		}
-	} else {
-		appLogger.Info().Msg("secret storage is disabled, skipping vault configuration loading")
 	}
 
-	// Initialize cache
-	cacheClient := infrastructure.NewKeyDBClient(cfg.Cache, appLogger)
+	deps.logger.Info().Msg("dependencies initialized successfully")
 
-	// Test cache connection
-	ctx, cancel := context.WithTimeout(ctx, cfg.Cache.DialTimeout)
-	defer cancel()
-
-	if err := cacheClient.Ping(ctx); err != nil {
-		appLogger.Fatal().Err(err).Msg("failed to connect to cache, continuing without cache")
-		cacheClient = nil
-	} else {
-		appLogger.Info().Msg("cache connection established")
-	}
-
-	storage, err := infrastructure.NewStorage(cfg.Storage)
-	if err != nil {
-		appLogger.Fatal().Err(err).Msg("failed to initialize storage")
-	}
-
-	analysisService := service.NewApplicationService(
-		adapters.NewPostgresRepository(storage),
-		adapters.NewCacheRepository(
-			cacheClient,
-			cfg.Cache,
-			appLogger,
-		),
-		adapters.NewOutboxRepository(storage),
-		adapters.NewHealthChecker(),
-		storage,
-		cfg.SSE,
-		appLogger,
-	)
-
-	app := usecases.NewApplication(
-		analysisService,
-		appLogger,
-		otel.GetTracerProvider(),
-		infrastructure.NoOp{},
-	)
-
-	requestHandler := adapters.NewRequestHandler(app, appLogger)
-
-	httpServer := initHTTPServer(cfg, appLogger, requestHandler)
-
-	webFetcher := adapters.NewWebPageFetcher(cfg.WebFetcher, appLogger)
-
-	linkChecker := adapters.NewLinkChecker(cfg.LinkChecker, appLogger)
-
-	htmlAnalyzer := adapters.NewHTMLAnalyzer(appLogger)
-
-	appLogger.Info().Msg("dependencies initialized successfully")
-
-	return &Dependencies{
-		cfg:                cfg,
-		logger:             appLogger,
-		tracerShutdownFunc: tracerShutdownFunc,
-		Infra: InfrastructureDeps{
-			SecretStorageClient: adapters.NewVaultRepository(secretStorageClient),
-			HTTPServer:          httpServer,
-			CacheClient:         cacheClient,
-		},
-		DomainServices: DomainServices{
-			WebFetcher:   webFetcher,
-			HTMLAnalyzer: htmlAnalyzer,
-			LinkChecker:  linkChecker,
-		},
-	}, nil
+	return deps, nil
 }
 
-func initHTTPServer(cfg *config.ServiceConfig, logger *infrastructure.Logger, reqHandler ports.RequestHandler) *http.Server {
+func initHTTPServer(
+	cfg *config.ServiceConfig,
+	logger infrastructure.Logger,
+	metrics infrastructure.Metrics,
+	reqHandler ports.RequestHandler,
+	keyService *infrastructure.PasetoKeyService,
+) *http.Server {
 	logger.Info().Msg("creating HTTP server...")
 
 	router := chi.NewRouter()
 
-	middlewares := initMiddlewares(cfg, logger)
+	middlewares := initMiddlewares(cfg, logger, metrics, keyService)
+
+	// Add global CORS middleware to handle preflight requests
+	router.Use(middleware.NewSecurityHeadersMiddleware().Middleware)
 
 	// Spin up automatic generated routes
 	handlers.HandlerWithOptions(reqHandler, handlers.ChiServerOptions{
@@ -178,7 +142,12 @@ func initHTTPServer(cfg *config.ServiceConfig, logger *infrastructure.Logger, re
 	return server
 }
 
-func initMiddlewares(cfg *config.ServiceConfig, logger *infrastructure.Logger) []handlers.MiddlewareFunc {
+func initMiddlewares(
+	cfg *config.ServiceConfig,
+	logger infrastructure.Logger,
+	metrics infrastructure.Metrics,
+	keyService *infrastructure.PasetoKeyService,
+) []handlers.MiddlewareFunc {
 	swagger, err := handlers.GetSwagger()
 	if err != nil {
 		logger.Fatal().Err(err).Msg("error loading swagger spec")
@@ -189,80 +158,49 @@ func initMiddlewares(cfg *config.ServiceConfig, logger *infrastructure.Logger) [
 	requestValidator := middleware.OapiRequestValidatorWithOptions(logger, swagger, &middleware.RequestValidatorOptions{
 		Options: openapi3filter.Options{
 			MultiError:         false,
-			AuthenticationFunc: middleware.NewPasetoAuthenticationFunc(cfg.Auth, logger),
+			AuthenticationFunc: middleware.NewPasetoAuthenticationFunc(cfg.Auth, logger, keyService),
 		},
 		ErrorHandler:          middleware.RequestValidationErrHandler,
 		SilenceServersWarning: true,
 	})
 
-	// Middlewares only applied to the automatic generated routes
 	middlewares := []handlers.MiddlewareFunc{
-		// Add basic middleware
 		chimiddleware.RequestID,
 		chimiddleware.RealIP,
-		chimiddleware.Logger,
 		chimiddleware.Recoverer,
 		chimiddleware.Timeout(cfg.HTTPServer.WriteTimeout),
-		middleware.NewSecurityHeadersMiddleware().Middleware,
 		middleware.NewAPIVersionMiddleware(cfg.AppConfig.APIVersion).Middleware,
 		requestValidator,
+		middleware.NewSecurityHeadersMiddleware().Middleware,
 		middleware.Tracer(),
 	}
 
-	// Add rate limiting middleware
+	if cfg.Telemetry.Metrics.Enabled {
+		metricsMiddleware := middleware.NewMetricsMiddleware(metrics)
+		middlewares = append(middlewares, metricsMiddleware.Middleware)
+		logger.Info().Msg("HTTP metrics collection enabled")
+	}
+
+	if cfg.Logging.AccessLog.Enabled {
+		healthFilter := middleware.NewHealthCheckFilter(cfg.Logging.AccessLog.LogHealthChecks)
+		accessLogger := middleware.NewAccessLogger(logger.Logger)
+
+		middlewares = append(middlewares, healthFilter.Middleware, accessLogger.Middleware)
+		logger.Info().
+			Bool("log_health_checks", cfg.Logging.AccessLog.LogHealthChecks).
+			Msg("structured access logging enabled")
+	}
+
 	if cfg.ThrottledRateLimiting.Enabled {
 		rateLimitMiddleware := middleware.NewThrottledRateLimitingMiddleware(cfg.ThrottledRateLimiting, logger)
 
 		middlewares = append(middlewares, rateLimitMiddleware.Middleware)
-		logger.Info().Msg("Rate limiting enabled")
+		logger.Info().Msg("rate limiting enabled")
 	}
 
-	// Authentication is handled by the OpenAPI request validator
 	if cfg.Auth.Enabled {
-		logger.Info().Msg("Authentication enabled")
+		logger.Info().Msg("authentication is enabled")
 	}
 
 	return middlewares
-}
-
-func initGlobalTracing(ctx context.Context, cfg *config.ServiceConfig) (func(context.Context) error, error) {
-	if !cfg.Telemetry.Traces.Enabled {
-		return func(_ context.Context) error {
-			return nil
-		}, nil
-	}
-
-	shutdownFunc, err := infrastructure.InitGlobalTracer(ctx, cfg.Telemetry, cfg.AppConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize global tracing: %w", err)
-	}
-
-	return shutdownFunc, nil
-}
-
-func createVaultClient(config config.SecretStorageConfig) (*api.Client, error) {
-	vaultConfig := api.DefaultConfig()
-	vaultConfig.Address = config.Address
-	vaultConfig.Timeout = config.Timeout
-
-	if config.TLSSkipVerify {
-		tlsConfig := &api.TLSConfig{
-			Insecure: true,
-		}
-		if err := vaultConfig.ConfigureTLS(tlsConfig); err != nil {
-			return nil, fmt.Errorf("failed to configure TLS: %w", err)
-		}
-	}
-
-	client, err := api.NewClient(vaultConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Vault client: %w", err)
-	}
-
-	// Skip namespace configuration for dev mode vault
-	if config.Namespace != "" {
-		client.SetNamespace(config.Namespace)
-	}
-
-	return client, nil
 }

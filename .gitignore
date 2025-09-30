@@ -32,3 +32,6 @@ vendor/
 /.certs/
 /.trees/
 /.claude/
+
+# Generated mocks
+internal/mocks/

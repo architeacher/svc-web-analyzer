@@ -1,0 +1,29 @@
+extensions: [ health_check, pprof, zpages ]
+pipelines:
+  logs:
+    receivers: [ otlp ]
+    processors: [ batch, memory_limiter ]
+    exporters: [ debug, file ]
+
+  metrics:
+    receivers: [ otlp ]
+    processors: [ memory_limiter, batch, resource ]
+    exporters: [ prometheus, debug ]
+
+  metrics/export:
+    receivers: [ otlp ]
+    processors: [ memory_limiter, batch, resource ]
+    exporters: [ debug, prometheusremotewrite/prometheus ]
+
+  traces:
+    receivers: [ otlp ]
+    processors: [ memory_limiter, batch, resource ]
+    exporters: [ debug, otlp/jaeger ]
+
+telemetry:
+  logs:
+    encoding: "console"
+    level: DEBUG
+
+  metrics:
+    level: detailed

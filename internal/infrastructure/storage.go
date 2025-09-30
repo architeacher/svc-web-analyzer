@@ -5,12 +5,13 @@ import (
 	"fmt"
 
 	"github.com/architeacher/svc-web-analyzer/internal/config"
+	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 )
 
 type Storage struct {
 	config config.StorageConfig
-	db     *sql.DB
+	db     *sqlx.DB
 }
 
 func NewStorage(config config.StorageConfig) (*Storage, error) {
@@ -24,7 +25,7 @@ func NewStorage(config config.StorageConfig) (*Storage, error) {
 		config.SSLMode,
 	)
 
-	db, err := sql.Open("postgres", dsn)
+	db, err := sqlx.Open("postgres", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database connection: %w", err)
 	}
@@ -44,7 +45,7 @@ func NewStorage(config config.StorageConfig) (*Storage, error) {
 	}, nil
 }
 
-func (s *Storage) GetDB() (*sql.DB, error) {
+func (s *Storage) GetDB() (*sqlx.DB, error) {
 	if s.db == nil {
 		return nil, fmt.Errorf("database connection not initialized")
 	}
@@ -55,6 +56,7 @@ func (s *Storage) Close() error {
 	if s.db != nil {
 		return s.db.Close()
 	}
+
 	return nil
 }
 
@@ -69,5 +71,6 @@ func (s *Storage) Stats() sql.DBStats {
 	if s.db == nil {
 		return sql.DBStats{}
 	}
-	return s.db.Stats()
+
+	return s.db.DB.Stats()
 }

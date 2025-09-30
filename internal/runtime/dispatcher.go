@@ -8,15 +8,12 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-
-	"github.com/architeacher/svc-web-analyzer/internal/config"
 )
 
 type ServiceCtx struct {
 	deps *Dependencies
 
-	reloadConfigChannel chan os.Signal
-	shutdownChannel     chan os.Signal
+	shutdownChannel chan os.Signal
 
 	serverCtx      context.Context
 	serverStopFunc context.CancelFunc
@@ -24,7 +21,7 @@ type ServiceCtx struct {
 	serverReady chan struct{}
 }
 
-func New(opt ...Option) *ServiceCtx {
+func New(opt ...ServiceOption) *ServiceCtx {
 	if len(opt) != 0 {
 		sCtx := ServiceCtx{}
 
@@ -36,16 +33,15 @@ func New(opt ...Option) *ServiceCtx {
 	}
 
 	return &ServiceCtx{
-		shutdownChannel:     make(chan os.Signal, 1),
-		reloadConfigChannel: make(chan os.Signal, 1),
+		shutdownChannel: make(chan os.Signal, 1),
 	}
 }
 
 func (c *ServiceCtx) Run() {
 	c.build()
 	c.startService()
-	c.wait()
 	c.monitorConfigChanges()
+	c.shutdownHook()
 	c.shutdown()
 }
 
@@ -53,9 +49,10 @@ func (c *ServiceCtx) Run() {
 func (c *ServiceCtx) build() {
 	c.serverCtx, c.serverStopFunc = context.WithCancel(context.Background())
 
-	deps, err := initializeDependencies(c.serverCtx)
+	deps, err := initializeDependencies(c.serverCtx, WithHTTPServer())
 	if err != nil {
-		panic(fmt.Errorf("ailed to initialize dependencies: %w", err))
+		fmt.Fprintf(os.Stderr, "FATAL: failed to initialize dependencies: %v\n", err)
+		os.Exit(1)
 	}
 
 	c.deps = deps
@@ -63,85 +60,75 @@ func (c *ServiceCtx) build() {
 
 // startService starts the HTTP server
 func (c *ServiceCtx) startService() {
-	c.deps.logger.Info().
-		Str("address", net.JoinHostPort(c.deps.cfg.HTTPServer.Host, fmt.Sprintf("%d", c.deps.cfg.HTTPServer.Port))).
-		Msg("service starting up")
+	// Start HTTP server
+	go func() {
+		c.deps.logger.Info().
+			Str("address", net.JoinHostPort(c.deps.cfg.HTTPServer.Host, fmt.Sprintf("%d", c.deps.cfg.HTTPServer.Port))).
+			Msg("service starting up")
 
-	if c.serverReady != nil {
-		c.serverReady <- struct{}{}
-	}
+		if c.serverReady != nil {
+			c.serverReady <- struct{}{}
+		}
 
-	if err := c.deps.Infra.HTTPServer.ListenAndServe(); err != nil {
-		c.deps.logger.Fatal().Err(err).Msg("unable to start http server")
-	}
+		if err := c.deps.Infra.HTTPServer.ListenAndServe(); err != nil {
+			c.deps.logger.Fatal().Err(err).Msg("unable to start http server")
+			c.serverStopFunc()
 
-	<-c.serverCtx.Done()
+			return
+		}
+	}()
 }
 
-func (c *ServiceCtx) wait() {
+func (c *ServiceCtx) shutdownHook() {
 	signal.Notify(c.shutdownChannel, syscall.SIGINT, syscall.SIGTERM)
-	signal.Notify(c.reloadConfigChannel, syscall.SIGHUP)
 }
 
 func (c *ServiceCtx) monitorConfigChanges() {
+	reloadErrors := c.deps.configLoader.WatchConfigSignals(c.serverCtx)
+
 	go func() {
-		for {
-			select {
-			case <-c.serverCtx.Done():
-				c.deps.logger.Info().Msg("stopping config monitor")
-				return
-
-			case <-c.reloadConfigChannel:
-				c.deps.logger.Info().Msg("received config reload signal")
-
-				if err := config.Load(c.serverCtx, c.deps.Infra.SecretStorageClient, c.deps.cfg); err != nil {
-					c.deps.logger.Error().Err(err).Msg("failed to reload config")
-					continue
-				}
-
-				c.deps.logger.Info().Msg("config reloaded successfully")
+		for err := range reloadErrors {
+			if err != nil {
+				c.deps.logger.Error().Err(err).Msg("failed to reload config")
+				continue
 			}
+
+			c.deps.logger.Info().Msg("config reloaded successfully")
 		}
+
+		c.deps.logger.Info().Msg("stopping config monitor")
 	}()
 }
 
 func (c *ServiceCtx) shutdown() {
-	go func() {
-		<-c.shutdownChannel
+	// Waits for one of the following shutdown conditions to happen.
+	select {
+	case <-c.serverCtx.Done():
+	case <-c.shutdownChannel:
 		defer close(c.shutdownChannel)
-		defer close(c.reloadConfigChannel)
+	}
 
-		c.deps.logger.Info().Msg("received shutdown signal")
+	c.deps.logger.Info().Msg("received shutdown signal")
 
-		defer c.cleanup()
+	// Cancel context that underlying processes would start cleanup.
+	c.serverStopFunc()
 
-		// Shutdown signal with a grace period of 30 seconds
-		shutdownCtx, cancel := context.WithTimeout(c.serverCtx, c.deps.cfg.HTTPServer.ShutdownTimeout)
+	// Shutdown signal with a grace period of 30 seconds.
+	shutdownCtx, cancel := context.WithTimeout(c.serverCtx, c.deps.cfg.HTTPServer.ShutdownTimeout)
 
-		go func() {
-			<-shutdownCtx.Done()
+	go func() {
+		<-shutdownCtx.Done()
 
-			if errors.Is(shutdownCtx.Err(), context.DeadlineExceeded) {
-				c.deps.logger.Error().Msg("graceful shutdown timed out.. forcing exit.")
-				cancel()
-				os.Exit(1)
-			}
-		}()
-
-		// Trigger graceful shutdown of the http server
-		if err := c.deps.Infra.HTTPServer.Shutdown(shutdownCtx); err != nil {
-			c.deps.logger.Error().Err(err).Msg("unable to gracefully shutdown http server")
+		if errors.Is(shutdownCtx.Err(), context.DeadlineExceeded) {
+			c.deps.logger.Error().Msg("graceful shutdown timed out.. forcing exit.")
+			cancel()
+			os.Exit(1)
 		}
-
-		if err := c.deps.tracerShutdownFunc(shutdownCtx); err != nil {
-			c.deps.logger.Error().Err(err).
-				Msg("unable to gracefully shutdown global tracer")
-		}
-
-		c.serverStopFunc()
-
-		c.deps.logger.Info().Msg("HTTP server shutdown completed")
 	}()
+
+	c.cleanup(shutdownCtx)
+
+	c.deps.logger.Info().Msg("HTTP server shutdown completed")
 }
 
 // WaitForServer blocks until the http server is running.
@@ -163,7 +150,7 @@ func (c *ServiceCtx) WaitForServer() {
 	}
 }
 
-func (c *ServiceCtx) cleanup() {
+func (c *ServiceCtx) cleanup(shutdownCtx context.Context) {
 	c.deps.logger.Info().Msg("cleaning up resources...")
 
 	if c.deps.Infra.CacheClient != nil {
@@ -172,5 +159,10 @@ func (c *ServiceCtx) cleanup() {
 		}
 	}
 
-	c.deps.logger.Info().Msg("Cleanup completed")
+	// Trigger graceful shutdown of the http server
+	if err := c.deps.Infra.HTTPServer.Shutdown(shutdownCtx); err != nil {
+		c.deps.logger.Error().Err(err).Msg("unable to gracefully shutdown http server")
+	}
+
+	c.deps.logger.Info().Msg("cleanup completed")
 }

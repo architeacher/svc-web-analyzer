@@ -22,8 +22,9 @@ type (
 	}
 )
 
-func NewFetchAnalysisQueryHandler(appService service.ApplicationService,
-	logger *infrastructure.Logger,
+func NewFetchAnalysisQueryHandler(
+	appService service.ApplicationService,
+	logger infrastructure.Logger,
 	tracerProvider trace.TracerProvider,
 	metricsClient decorator.MetricsClient,
 ) decorator.QueryHandler[FetchAnalysisQuery, *domain.Analysis] {

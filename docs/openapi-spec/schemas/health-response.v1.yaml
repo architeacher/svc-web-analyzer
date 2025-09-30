@@ -7,8 +7,8 @@ HealthResponse:
   properties:
     status:
       type: string
-      enum: [OK, DOWN, MAINTENANCE]
-      description: Overall health status - OK only if all dependencies are healthy
+      enum: [OK, DEGRADED, DOWN, MAINTENANCE]
+      description: Overall health status - OK only if all dependencies are healthy, DEGRADED if some non-critical dependencies are unhealthy
     timestamp:
       type: string
       format: date-time
@@ -41,7 +41,7 @@ DependencyCheck:
   properties:
     status:
       type: string
-      enum: [healthy, unhealthy, unknown]
+      enum: [healthy, degraded, unhealthy, unknown]
       description: Health status of the dependency
     response_time:
       type: number

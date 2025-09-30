@@ -21,7 +21,7 @@ type (
 )
 
 func NewFetchReadinessReportQueryHandler(appService service.ApplicationService,
-	logger *infrastructure.Logger,
+	logger infrastructure.Logger,
 	tracerProvider trace.TracerProvider,
 	metricsClient decorator.MetricsClient,
 ) decorator.QueryHandler[FetchReadinessReportQuery, *domain.ReadinessResult] {

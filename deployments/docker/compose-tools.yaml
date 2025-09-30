@@ -1,0 +1,115 @@
+x-default-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "5m"
+    max-file: "3"
+
+services:
+  otel-collector:
+    container_name: "svc-web-analyzer-otel-collector"
+    image: otel/opentelemetry-collector-contrib:0.138.0
+    networks:
+      - internal
+    ports:
+      - "${OTEL_GRPC_PORT:-4317}:4317" # accept OpenTelemetry Protocol (OTLP) over gRPC receiver
+      - "${OTEL_HTTP_PORT:-4318}:4318" # accept OpenTelemetry Protocol (OTLP) over HTTP receiver
+
+      - "${OTEL_PPROF_PORT:-1888}:1888" # pprof extension
+      - "${OTEL_PROMETHEUS_METRICS_PORT:-8888}:8888" # Prometheus' metrics exposed by the Collector.
+      - "${OTEL_PROMETHEUS_EXPORTER_PORT:-8889}:8889" # Prometheus exporter metrics for scraping by Prometheus.
+      - "${OTEL_HEALTH_CHECK_PORT:-13133}:13133" # health_check extension
+      - "${OTEL_ZPAGES_EXTENSION_PORT:-55679}:55679" # zpages extension
+    volumes:
+      - "./deployments/docker/otel-collector/config.yaml:/etc/otelcol-contrib/config.yaml:ro"
+      - "./deployments/docker/otel-collector/conf.d/:/etc/otel/conf.d/"
+    secrets:
+      - source: root_cert_file
+        target: "/etc/ssl/certs/rootCA.pem"
+      - source: cert_file
+        target: "/etc/ssl/certs/ca-cert-star-web-analyzer-dev-crt.pem"
+      - source: key_file
+        target: "/etc/ssl/certs/ca-cert-star-web-analyzer-dev-key.pem"
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    restart: unless-stopped
+    logging:
+      <<: *default-logging
+
+  prometheus:
+    container_name: "svc-web-analyzer-prometheus"
+    image: prom/prometheus:v3.7.2
+    networks:
+      - internal
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - "./deployments/docker/prometheus/config.yaml:/etc/prometheus/prometheus.yaml:ro"
+      - prometheus-storage:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+      - "traefik.http.routers.prometheus.rule=Host(`prometheus.web-analyzer.dev`)"
+      - "traefik.http.routers.prometheus.entrypoints=websecure"
+      - "traefik.http.routers.prometheus.tls=true"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    depends_on:
+      otel-collector:
+        condition: service_started
+    logging:
+      <<: *default-logging
+
+  grafana:
+    container_name: "svc-web-analyzer-grafana"
+    image: grafana/grafana:11.6.7
+    networks:
+      - internal
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-bottom.Secret}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-clock-panel
+    volumes:
+      - grafana-storage:/var/lib/grafana
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+      - "traefik.http.routers.grafana.rule=Host(`grafana.web-analyzer.dev`)"
+      - "traefik.http.routers.grafana.entrypoints=websecure"
+      - "traefik.http.routers.grafana.tls=true"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    depends_on:
+      prometheus:
+        condition: service_started
+    logging:
+      <<: *default-logging
+
+secrets:
+  root_cert_file:
+    file: "./.certs/rootCA.pem"
+  cert_file:
+    file: "./.certs/star-web-analyzer-dev.crt"
+  key_file:
+    file: "./.certs/star-web-analyzer-dev.key"
+
+volumes:
+  prometheus-storage:
+  grafana-storage:

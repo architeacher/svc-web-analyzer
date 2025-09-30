@@ -13,11 +13,11 @@ import (
 
 type KeydbClient struct {
 	client *redis.Client
-	logger *Logger
+	logger Logger
 	config config.CacheConfig
 }
 
-func NewKeyDBClient(config config.CacheConfig, logger *Logger) *KeydbClient {
+func NewKeyDBClient(config config.CacheConfig, logger Logger) *KeydbClient {
 	opts := &redis.Options{
 		Addr:         config.Addr,
 		Password:     config.Password,
@@ -65,8 +65,8 @@ func (c *KeydbClient) Get(ctx context.Context, key string) ([]byte, error) {
 			return nil, domain.ErrCacheUnavailable
 		}
 		c.logger.Error().
+			Err(err).
 			Str("key", key).
-			Str("error", err.Error()).
 			Msg("keydb get operation failed")
 
 		return nil, err
@@ -94,8 +94,8 @@ func (c *KeydbClient) Set(ctx context.Context, key string, value []byte, expiry 
 
 	if err != nil {
 		c.logger.Error().
+			Err(err).
 			Str("key", key).
-			Str("error", err.Error()).
 			Msg("keydb set operation failed")
 	}
 
@@ -116,8 +116,8 @@ func (c *KeydbClient) Delete(ctx context.Context, key string) error {
 
 	if err != nil {
 		c.logger.Error().
+			Err(err).
 			Str("key", key).
-			Str("error", err.Error()).
 			Msg("keydb delete operation failed")
 	}
 
@@ -126,8 +126,8 @@ func (c *KeydbClient) Delete(ctx context.Context, key string) error {
 
 // keydb statistics and monitoring
 
-func (c *KeydbClient) GetStats(ctx context.Context) (map[string]interface{}, error) {
-	stats := make(map[string]interface{})
+func (c *KeydbClient) GetStats(ctx context.Context) (map[string]any, error) {
+	stats := make(map[string]any)
 
 	// Get keydb info
 	info, err := c.client.Info(ctx, "memory", "stats", "clients").Result()
@@ -139,7 +139,7 @@ func (c *KeydbClient) GetStats(ctx context.Context) (map[string]interface{}, err
 
 	// Get pool stats
 	poolStats := c.client.PoolStats()
-	stats["pool_stats"] = map[string]interface{}{
+	stats["pool_stats"] = map[string]any{
 		"hits":        poolStats.Hits,
 		"misses":      poolStats.Misses,
 		"timeouts":    poolStats.Timeouts,

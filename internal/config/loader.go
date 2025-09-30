@@ -2,9 +2,12 @@ package config
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/architeacher/svc-web-analyzer/internal/ports"
@@ -12,6 +15,119 @@ import (
 	"github.com/kelseyhightower/envconfig"
 )
 
+// Loader handles configuration loading and reloading.
+type Loader struct {
+	cfg              *ServiceConfig
+	secretsRepo      ports.SecretsRepository
+	configSignalChan chan os.Signal
+	reloadErrors     chan error
+	ticker           *time.Ticker
+	lastVersion      uint
+}
+
+// NewLoader creates a new config loader instance.
+func NewLoader(cfg *ServiceConfig, secretsRepo ports.SecretsRepository, initialVersion uint) *Loader {
+	return &Loader{
+		cfg:              cfg,
+		secretsRepo:      secretsRepo,
+		configSignalChan: make(chan os.Signal, 1),
+		reloadErrors:     make(chan error, 1),
+		lastVersion:      initialVersion,
+	}
+}
+
+// WatchConfigSignals monitors for SIGHUP (reload) and SIGUSR1 (dump) signals.
+// It also starts a background ticker for periodic config reloading if enabled.
+// It returns a channel that will receive reload errors for logging by the caller.
+func (l *Loader) WatchConfigSignals(ctx context.Context) <-chan error {
+	signal.Notify(l.configSignalChan, syscall.SIGHUP, syscall.SIGUSR1)
+
+	if l.cfg.SecretStorage.Enabled && l.cfg.SecretStorage.PollInterval > 0 {
+		l.ticker = time.NewTicker(l.cfg.SecretStorage.PollInterval)
+	}
+
+	go func() {
+		defer signal.Stop(l.configSignalChan)
+		defer close(l.configSignalChan)
+		defer close(l.reloadErrors)
+
+		if l.ticker != nil {
+			defer l.ticker.Stop()
+		}
+
+		var reloadTickerChan <-chan time.Time
+		if l.ticker != nil {
+			reloadTickerChan = l.ticker.C
+		}
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+
+			case <-reloadTickerChan:
+				l.configSignalChan <- syscall.SIGHUP
+
+			case sig := <-l.configSignalChan:
+				switch sig {
+				case syscall.SIGHUP:
+					l.handleConfigReload(ctx)
+
+				case syscall.SIGUSR1:
+					l.DumpConfig()
+				}
+			}
+		}
+	}()
+
+	return l.reloadErrors
+}
+
+// DumpConfig outputs the current configuration to stdout as JSON.
+func (l *Loader) DumpConfig() {
+	configJSON, err := json.MarshalIndent(l.cfg, "", "  ")
+	if err != nil {
+		fmt.Fprintf(os.Stdout, "Error marshaling config: %v\n", err)
+
+		return
+	}
+
+	fmt.Fprintf(os.Stdout, "\n=== Configuration Dump ===\n%s\n=== End Configuration ===\n\n", string(configJSON))
+}
+
+// Load config from the secrets' repository.
+func (l *Loader) Load(ctx context.Context, secretsRepo ports.SecretsRepository, cfg *ServiceConfig) (uint, error) {
+	if !cfg.SecretStorage.Enabled {
+		return 0, fmt.Errorf("secret storage is not enabled")
+	}
+
+	if err := l.authenticateVault(ctx, secretsRepo, cfg.SecretStorage); err != nil {
+		return 0, fmt.Errorf("failed to authenticate with Vault: %w", err)
+	}
+
+	data, err := l.loadSecretsFromPath(ctx, secretsRepo, cfg, "data")
+	if err != nil {
+		return 0, fmt.Errorf("failed to load secrets from Vault: %w", err)
+	}
+
+	if err := l.applySecretsToConfig(cfg, data); err != nil {
+		return 0, fmt.Errorf("failed to apply secrets to config: %w", err)
+	}
+
+	metadata, err := l.loadSecretsFromPath(ctx, secretsRepo, cfg, "metadata")
+	if err != nil {
+		return 0, fmt.Errorf("failed to load secret metadata: %w", err)
+	}
+
+	version, err := l.getSecretVersion(metadata)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get secret version: %w", err)
+	}
+
+	return version, nil
+}
+
+// Init config from environment variables.
 func Init() (*ServiceConfig, error) {
 	cfg := &ServiceConfig{}
 
@@ -35,33 +151,7 @@ func Init() (*ServiceConfig, error) {
 	return cfg, nil
 }
 
-func Load(ctx context.Context, secretsRepo ports.SecretsRepository, cfg *ServiceConfig) error {
-	if !cfg.SecretStorage.Enabled {
-		return fmt.Errorf("secret storage is not enabled")
-	}
-
-	if err := loadVaultSecrets(ctx, secretsRepo, cfg); err != nil {
-		return fmt.Errorf("failed to load secrets from Vault: %w", err)
-	}
-
-	return nil
-}
-
-func loadVaultSecrets(ctx context.Context, client ports.SecretsRepository, cfg *ServiceConfig) error {
-	if err := authenticateVault(ctx, client, cfg.SecretStorage); err != nil {
-		return fmt.Errorf("failed to authenticate with Vault: %w", err)
-	}
-
-	// Load secrets from the specific Vault path
-	secretPath := fmt.Sprintf("apps/data/%s", cfg.SecretStorage.MountPath)
-	if err := loadSecretsFromPath(ctx, client, cfg, secretPath); err != nil {
-		return fmt.Errorf("failed to load secrets from Vault: %w", err)
-	}
-
-	return nil
-}
-
-func authenticateVault(ctx context.Context, client ports.SecretsRepository, config SecretStorageConfig) error {
+func (l *Loader) authenticateVault(ctx context.Context, client ports.SecretsRepository, config SecretStorageConfig) error {
 	switch strings.ToLower(config.AuthMethod) {
 	case "token":
 		if config.Token == "" {
@@ -97,18 +187,47 @@ func authenticateVault(ctx context.Context, client ports.SecretsRepository, conf
 	}
 }
 
-func loadSecretsFromPath(ctx context.Context, client ports.SecretsRepository, cfg *ServiceConfig, secretPath string) error {
+func (l *Loader) handleConfigReload(ctx context.Context) {
+	metadata, err := l.loadSecretsFromPath(ctx, l.secretsRepo, l.cfg, "metadata")
+	if err != nil {
+		l.reportReloadStatus(fmt.Errorf("failed to load secret metadata: %w", err))
+
+		return
+	}
+
+	currentVersion, err := l.getSecretVersion(metadata)
+	if err != nil {
+		l.reportReloadStatus(fmt.Errorf("failed to get secret version: %w", err))
+
+		return
+	}
+
+	if currentVersion == l.lastVersion {
+		return
+	}
+
+	version, err := l.Load(ctx, l.secretsRepo, l.cfg)
+	if err != nil {
+		l.reportReloadStatus(err)
+
+		return
+	}
+
+	l.lastVersion = version
+	l.reportReloadStatus(nil)
+}
+
+func getSecretsWithRetry(ctx context.Context, secretsRepo ports.SecretsRepository, cfg *ServiceConfig, pathType, mountPath string) (*api.Secret, error) {
+	path := fmt.Sprintf("apps/%s/%s", pathType, mountPath)
+
 	ctx, cancel := context.WithTimeout(ctx, cfg.SecretStorage.Timeout)
 	defer cancel()
-
-	// Use the full path directly as provided (already includes apps/data/svc-web-analyzer)
-	fullPath := secretPath
 
 	var secret *api.Secret
 	var err error
 
 	for attempt := 0; attempt <= cfg.SecretStorage.MaxRetries; attempt++ {
-		secret, err = client.GetSecrets(ctx, fullPath)
+		secret, err = secretsRepo.GetSecrets(ctx, path)
 		if err == nil {
 			break
 		}
@@ -119,26 +238,63 @@ func loadSecretsFromPath(ctx context.Context, client ports.SecretsRepository, cf
 	}
 
 	if err != nil {
-		return fmt.Errorf("failed to read secret from path %s after %d retries: %w", fullPath, cfg.SecretStorage.MaxRetries, err)
+		return nil, fmt.Errorf("failed to read from path %s after %d retries: %w", path, cfg.SecretStorage.MaxRetries, err)
+	}
+
+	return secret, nil
+}
+
+func (l *Loader) getSecretVersion(metadata map[string]interface{}) (uint, error) {
+	if metadata == nil {
+		return 0, nil
+	}
+
+	currentVersion, ok := metadata["current_version"]
+	if !ok {
+		return 0, nil
+	}
+
+	switch v := currentVersion.(type) {
+	case float64:
+		return uint(v), nil
+	case uint:
+		return v, nil
+	case json.Number:
+		version, err := v.Int64()
+		if err != nil {
+			return 0, fmt.Errorf("failed to parse version: %w", err)
+		}
+
+		return uint(version), nil
+	default:
+		return 0, fmt.Errorf("unexpected version type: %T", currentVersion)
+	}
+}
+
+func (l *Loader) loadSecretsFromPath(ctx context.Context, secretsRepo ports.SecretsRepository, cfg *ServiceConfig, pathType string) (map[string]interface{}, error) {
+	secret, err := getSecretsWithRetry(ctx, secretsRepo, cfg, "data", cfg.SecretStorage.MountPath)
+	if err != nil {
+		return nil, err
 	}
 
 	if secret == nil || secret.Data == nil {
-		return nil
+		return nil, nil
 	}
 
-	data, ok := secret.Data["data"].(map[string]interface{})
+	// For KV v2, the response structure is: secret.Data[pathType] where pathType is "data" or "metadata"
+	result, ok := secret.Data[pathType].(map[string]interface{})
 	if !ok {
-		return fmt.Errorf("invalid secret format at path %s", fullPath)
+		return nil, fmt.Errorf("invalid secret format at path apps/data/%s, missing '%s' key", cfg.SecretStorage.MountPath, pathType)
 	}
 
-	return applySecretsToConfig(cfg, data)
+	return result, nil
 }
 
-func applySecretsToConfig(cfg *ServiceConfig, data map[string]interface{}) error {
-	// Apply secrets directly from flat key-value pairs stored in Vault
+// applySecretsToConfig directly from flat key-value pairs stored in Vault
+func (l *Loader) applySecretsToConfig(cfg *ServiceConfig, data map[string]interface{}) error {
 	for key, value := range data {
 		if strValue, ok := value.(string); ok && strValue != "" {
-			if err := applySecretToConfig(cfg, key, strValue); err != nil {
+			if err := l.applySecretToConfig(cfg, key, strValue); err != nil {
 				return fmt.Errorf("failed to apply secrets to config: %w", err)
 			}
 		}
@@ -147,7 +303,7 @@ func applySecretsToConfig(cfg *ServiceConfig, data map[string]interface{}) error
 	return nil
 }
 
-func applySecretToConfig(cfg *ServiceConfig, key, value string) error {
+func (l *Loader) applySecretToConfig(cfg *ServiceConfig, key, value string) error {
 	// Middleware environment variable and update config based on key
 	if err := os.Setenv(key, value); err != nil {
 		return fmt.Errorf("failed to set environment variable %s: %w", key, err)
@@ -184,4 +340,13 @@ func applySecretToConfig(cfg *ServiceConfig, key, value string) error {
 	}
 
 	return nil
+}
+
+// reportReloadStatus sends reload status (error or nil for success) to reloadErrors channel.
+// It uses non-blocking send to avoid blocking if no receiver is ready.
+func (l *Loader) reportReloadStatus(err error) {
+	select {
+	case l.reloadErrors <- err:
+	default:
+	}
 }

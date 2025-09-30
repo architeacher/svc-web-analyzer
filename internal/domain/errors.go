@@ -6,25 +6,44 @@ import (
 )
 
 var (
-	ErrAnalysisNotFound    = errors.New("analysis not found")
-	ErrInvalidURL          = errors.New("invalid URL")
-	ErrURLNotReachable     = errors.New("URL not reachable")
-	ErrTimeoutExceeded     = errors.New("analysis timeout exceeded")
-	ErrInvalidRequest      = errors.New("invalid request")
-	ErrInternalServerError = errors.New("internal server error")
-	ErrUnauthorized        = errors.New("unauthorized")
-	ErrRateLimitExceeded   = errors.New("rate limit exceeded")
-	ErrCircuitBreakerOpen  = errors.New("circuit breaker open")
-	ErrCacheUnavailable    = errors.New("cache service unavailable")
+	ErrAnalysisNotFound       = errors.New("analysis not found")
+	ErrInvalidURL             = errors.New("invalid URL")
+	ErrURLNotReachable        = errors.New("URL not reachable")
+	ErrTimeoutExceeded        = errors.New("analysis timeout exceeded")
+	ErrInvalidRequest         = errors.New("invalid request")
+	ErrInternalServerError    = errors.New("internal server error")
+	ErrUnauthorized           = errors.New("unauthorized")
+	ErrRateLimitExceeded      = errors.New("rate limit exceeded")
+	ErrCircuitBreakerOpen     = errors.New("circuit breaker open")
+	ErrCacheUnavailable       = errors.New("cache service unavailable")
+	ErrConcurrentModification = errors.New("concurrent modification detected")
 )
 
-type DomainError struct {
-	Code       string
-	Message    string
-	StatusCode int
-	Cause      error
-	Details    map[string]interface{}
-}
+type (
+	DomainError struct {
+		Code       string
+		Message    string
+		StatusCode int
+		Cause      error
+		Details    map[string]any
+	}
+
+	OptimisticLockError struct {
+		Expected int
+		Actual   int
+	}
+
+	InvalidStateTransitionError struct {
+		From string
+		To   string
+	}
+
+	MaxRetriesExceededError struct {
+		EventID    string
+		RetryCount int
+		MaxRetries int
+	}
+)
 
 func (e *DomainError) Error() string {
 	if e.Cause != nil {
@@ -104,4 +123,27 @@ func NewInternalServerError(message string, cause error) *DomainError {
 		500,
 		cause,
 	)
+}
+
+func NewConcurrentModificationError(resourceID string, expectedVersion, actualVersion int) *DomainError {
+	return NewDomainError(
+		"CONCURRENT_MODIFICATION",
+		fmt.Sprintf("Resource %s was modified by another process", resourceID),
+		409,
+		ErrConcurrentModification,
+	).WithDetails("resource_id", resourceID).
+		WithDetails("expected_version", expectedVersion).
+		WithDetails("actual_version", actualVersion)
+}
+
+func (e *OptimisticLockError) Error() string {
+	return fmt.Sprintf("optimistic lock failed: expected version %d, got %d", e.Expected, e.Actual)
+}
+
+func (e *InvalidStateTransitionError) Error() string {
+	return fmt.Sprintf("invalid state transition from %s to %s", e.From, e.To)
+}
+
+func (e *MaxRetriesExceededError) Error() string {
+	return fmt.Sprintf("max retries exceeded for event %s: %d/%d", e.EventID, e.RetryCount, e.MaxRetries)
 }

@@ -19,20 +19,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// LinkCheckerTestSuite implements a custom test suite pattern for link checker tests
 type LinkCheckerTestSuite struct {
 	linkChecker *LinkChecker
-	logger      *infrastructure.Logger
+	logger      infrastructure.Logger
+	metrics     infrastructure.Metrics
 	config      config.LinkCheckerConfig
 	testServers []*httptest.Server
 	t           *testing.T
 }
 
-// newLinkCheckerTestSuite creates a new test suite instance
 func newLinkCheckerTestSuite(t *testing.T) *LinkCheckerTestSuite {
-	nopLogger := zerolog.Nop()
-	logger := &infrastructure.Logger{Logger: &nopLogger}
-
 	cfg := config.LinkCheckerConfig{
 		Timeout:             5 * time.Second,
 		MaxConcurrentChecks: 3,
@@ -48,15 +44,15 @@ func newLinkCheckerTestSuite(t *testing.T) *LinkCheckerTestSuite {
 	}
 
 	return &LinkCheckerTestSuite{
-		logger: logger,
-		config: cfg,
-		t:      t,
+		logger:  infrastructure.Logger{Logger: zerolog.Nop()},
+		metrics: &infrastructure.NoOpMetrics{},
+		config:  cfg,
+		t:       t,
 	}
 }
 
-// SetupTest sets up resources before each test
 func (suite *LinkCheckerTestSuite) SetupTest() {
-	suite.linkChecker = NewLinkChecker(suite.config, suite.logger)
+	suite.linkChecker = NewLinkChecker(suite.config, suite.logger, suite.metrics)
 	suite.testServers = make([]*httptest.Server, 0)
 }
 
@@ -509,7 +505,7 @@ func (suite *LinkCheckerTestSuite) TestCheckAccessibility_InaccessibleURLs() {
 func (suite *LinkCheckerTestSuite) TestCheckAccessibility_ConcurrencyLimits() {
 	suite.config.MaxConcurrentChecks = 2 // Limit to 2 concurrent checks
 	// Recreate linkChecker with updated config
-	suite.linkChecker = NewLinkChecker(suite.config, suite.logger)
+	suite.linkChecker = NewLinkChecker(suite.config, suite.logger, suite.metrics)
 
 	var activeConnections int32
 	var maxActiveConnections int32
@@ -562,7 +558,7 @@ func (suite *LinkCheckerTestSuite) TestCheckAccessibility_ConcurrencyLimits() {
 func (suite *LinkCheckerTestSuite) TestCheckAccessibility_MaxLinksLimit() {
 	suite.config.MaxLinksToCheck = 3 // Limit to 3 links
 	// Recreate linkChecker with updated config
-	suite.linkChecker = NewLinkChecker(suite.config, suite.logger)
+	suite.linkChecker = NewLinkChecker(suite.config, suite.logger, suite.metrics)
 
 	var requestCount int32
 	var mu sync.Mutex
@@ -608,7 +604,7 @@ func (suite *LinkCheckerTestSuite) TestCheckAccessibility_CircuitBreaker() {
 	// Middleware a very short timeout to trigger network errors
 	suite.config.Timeout = 50 * time.Millisecond
 	// Recreate linkChecker with updated config
-	suite.linkChecker = NewLinkChecker(suite.config, suite.logger)
+	suite.linkChecker = NewLinkChecker(suite.config, suite.logger, suite.metrics)
 
 	// Create a server that responds very slowly to trigger timeout errors
 	server := suite.createTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

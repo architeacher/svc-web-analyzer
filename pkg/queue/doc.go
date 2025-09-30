@@ -40,7 +40,7 @@
 //
 // Publishing messages:
 //
-//	payload := map[string]interface{}{
+//	payload := map[string]any{
 //		"id":      "123",
 //		"message": "Hello, World!",
 //	}
@@ -53,7 +53,7 @@
 // Consuming messages:
 //
 //	handler := func(ctx context.Context, msg queue.Message, ctrl *queue.MsgController) error {
-//		var payload map[string]interface{}
+//		var payload map[string]any
 //		if err := msg.Unmarshal(&payload); err != nil {
 //			return err
 //		}

@@ -2,14 +2,12 @@ package domain
 
 import (
 	"time"
-
-	"github.com/architeacher/svc-web-analyzer/internal/handlers"
 )
 
 type (
 	// DependencyStatus represents the health status of a dependency
 	DependencyStatus struct {
-		Status       handlers.DependencyCheckStatus
+		Status       DependencyCheckStatus
 		ResponseTime float32
 		LastChecked  time.Time
 		Error        string
@@ -17,7 +15,7 @@ type (
 
 	// LivenessResult contains liveness check results
 	LivenessResult struct {
-		OverallStatus handlers.LivenessResponseStatus
+		OverallStatus LivenessResponseStatus
 		Storage       DependencyStatus
 		Cache         DependencyStatus
 		Queue         DependencyStatus
@@ -25,7 +23,7 @@ type (
 
 	// ReadinessResult contains readiness check results
 	ReadinessResult struct {
-		OverallStatus handlers.ReadinessResponseStatus
+		OverallStatus ReadinessResponseStatus
 		Storage       DependencyStatus
 		Cache         DependencyStatus
 		Queue         DependencyStatus
@@ -33,7 +31,7 @@ type (
 
 	// HealthResult contains comprehensive health check results
 	HealthResult struct {
-		OverallStatus handlers.HealthResponseStatus
+		OverallStatus HealthResponseStatus
 		Storage       DependencyStatus
 		Cache         DependencyStatus
 		Queue         DependencyStatus

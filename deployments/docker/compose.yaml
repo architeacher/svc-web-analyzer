@@ -1,0 +1,356 @@
+x-default-secrets: &secrets
+  - source: root_cert_file
+    target: "/etc/ssl/certs/rootCA.pem"
+  - source: cert_file
+    target: "/etc/ssl/certs/ca-cert-star-web-analyzer-dev-crt.pem"
+  - source: key_file
+    target: "/etc/ssl/certs/ca-cert-star-web-analyzer-dev-key.pem"
+
+x-default-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "5m"
+    max-file: "3"
+
+x-base-app: &base-app
+  image: "svc-web-analyzer-backend-app:latest"
+  build:
+    args:
+      GO_VERSION: "${GO_VERSION:-1.25.3}"
+    context: .
+    dockerfile: deployments/docker/Dockerfile
+  env_file:
+    - .envrc
+  networks:
+    - internal
+  restart: unless-stopped
+  depends_on:
+    vault-init:
+      condition: service_completed_successfully
+    migrate:
+      condition: service_completed_successfully
+    rabbitmq:
+      condition: service_healthy
+    keydb:
+      condition: service_healthy
+  cap_add:
+    - SYS_PTRACE
+  security_opt:
+    - "seccomp:unconfined"
+  volumes:
+    - ".:/app"
+    - type: bind
+      source: "./deployments/docker/svc-web-analyzer/config/air"
+      target: "/etc/air"
+  logging:
+    <<: *default-logging
+
+services:
+  traefik:
+    container_name: "svc-web-analyzer-traefik"
+    image: traefik:v3.5.3
+    networks:
+      - internal
+    ports:
+      - "80:80"
+      - "443:443"
+      - "${FORWARD_TRAEFIK_PORT:-8080}:8080"  # Traefik dashboard
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.web-analyzer.dev`)"
+      - "traefik.http.routers.traefik.entrypoints=websecure"
+      - "traefik.http.routers.traefik.tls=true"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.middlewares.traefik-auth.basicauth.users=admin:$$2y$$10$$GU0rHJ9wjKnKl9AmaF9PU.ZTk4B5qM5J5qLgRrA8a4dJ5s7CklbWS"  # admin:bottom.Secret
+    healthcheck:
+      test: [ "CMD-SHELL", "wget --quiet --spider -S --tries=1 http://localhost:8083/ping" ]
+      interval: 10s
+      retries: 5
+      start_period: 1s
+      timeout: 1s
+    restart: unless-stopped
+    secrets: *secrets
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "./deployments/docker/traefik:/etc/traefik:ro"
+    command:
+      - "--configFile=/etc/traefik/static.yaml"
+    logging:
+      <<: *default-logging
+
+  backend-app:
+    <<: *base-app
+    container_name: "svc-web-analyzer-backend-app"
+    profiles:
+      - development
+    ports:
+      - "${SVC_WEB_ANALYZER_DEBUG_PORT:-50001}:50001"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.backend.loadbalancer.server.port=${HTTP_SERVER_PORT}"
+      - "traefik.http.routers.backend.rule=Host(`api.web-analyzer.dev`)"
+      - "traefik.http.routers.backend.entrypoints=websecure"
+      - "traefik.http.routers.backend.tls=true"
+      - "traefik.http.routers.backend.service=backend"
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:${HTTP_SERVER_PORT}/v1/readiness" ]
+      interval: 10s
+      retries: 5
+      start_period: 10s
+      timeout: 1s
+    command: [ "sh", "-c", "air -c /etc/air/.svc.toml" ]
+
+  publisher:
+    <<: *base-app
+    profiles:
+      - development
+    ports:
+      - "${WEB_ANALYZER_PUBLISHER_DEBUG_PORT:-50003}:50003"
+    command: [ "sh", "-c", "air -c /etc/air/.publisher.toml" ]
+    healthcheck:
+      test: [ "CMD-SHELL", "pgrep -f publisher || exit 1" ]
+      interval: 10s
+      retries: 5
+      start_period: 10s
+      timeout: 5s
+    deploy:
+      replicas: 1
+
+  subscriber:
+    <<: *base-app
+    profiles:
+      - development
+    ports:
+      - "${WEB_ANALYZER_SUBSCRIBER_DEBUG_PORT:-50005}:50005"
+    command: [ "sh", "-c", "air -c /etc/air/.subscriber.toml" ]
+    healthcheck:
+      test: [ "CMD-SHELL", "pgrep -f subscriber || exit 1" ]
+      interval: 10s
+      retries: 5
+      start_period: 10s
+      timeout: 5s
+    deploy:
+      replicas: 1
+
+  vault-init:
+    container_name: "svc-web-analyzer-vault-init"
+    image: hashicorp/vault:1.20.4
+    networks:
+      - internal
+    env_file:
+      - .envrc
+    volumes:
+      - "./deployments/docker/vault/init-vault.sh:/vault/init-vault.sh"
+      - "./.envrc:/app/.envrc"
+    depends_on:
+      vault:
+        condition: service_healthy
+    command: ["sh", "/vault/init-vault.sh"]
+    restart: "no"
+    logging:
+      <<: *default-logging
+
+  vault:
+    container_name: "svc-web-analyzer-vault"
+    image: hashicorp/vault:1.20.4
+    networks:
+      - internal
+    ports:
+      - "${VAULT_PORT:-8200}:8200"
+    env_file:
+      - .envrc
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.vault.loadbalancer.server.port=${VAULT_PORT}"
+      - "traefik.http.routers.vault.rule=Host(`vault.web-analyzer.dev`)"
+      - "traefik.http.routers.vault.entrypoints=websecure"
+      - "traefik.http.routers.vault.tls=true"
+    cap_add:
+      - IPC_LOCK
+    volumes:
+      - vault-config-storage:/vault/config
+      - vault-storage:/vault/data
+      - vault-logs-storage:/vault/logs
+    command: ["vault", "server", "-dev"]
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 30s
+      retries: 3
+      start_period: 10s
+      timeout: 5s
+    restart: unless-stopped
+    logging:
+      <<: *default-logging
+
+  migrate:
+    container_name: "svc-web-analyzer-migrate"
+    image: migrate/migrate:v4.19.0
+    networks:
+      - internal
+    env_file:
+      - .envrc
+    volumes:
+      - "./migrations:/migrations"
+    command: [
+      "-path", "/migrations",
+      "-database", "postgres://${POSTGRES_USERNAME}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DATABASE}?sslmode=disable",
+      "up"
+    ]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    logging:
+      <<: *default-logging
+
+  postgres:
+    container_name: "svc-web-analyzer-postgres"
+    image: postgres:17.6-alpine
+    networks:
+      - internal
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    env_file:
+      - .envrc
+    volumes:
+      - postgres-storage:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USERNAME} -d ${POSTGRES_DATABASE}"]
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      timeout: 5s
+    restart: unless-stopped
+    logging:
+      <<: *default-logging
+
+  rabbitmq:
+    container_name: "svc-web-analyzer-rabbitmq"
+    image: rabbitmq:4.1.4-management-alpine
+    networks:
+      - internal
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-admin}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASS:-bottom.Secret}
+      - RABBITMQ_DEFAULT_VHOST=${RABBITMQ_VHOST:-/}
+    env_file:
+      - .envrc
+    volumes:
+      - rabbitmq-storage:/var/lib/rabbitmq
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.rabbitmq.loadbalancer.server.port=${RABBITMQ_MANAGEMENT_PORT}"
+      - "traefik.http.routers.rabbitmq.rule=Host(`rabbitmq.web-analyzer.dev`)"
+      - "traefik.http.routers.rabbitmq.entrypoints=websecure"
+      - "traefik.http.routers.rabbitmq.tls=true"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      retries: 3
+      start_period: 60s
+      timeout: 10s
+    restart: unless-stopped
+    logging:
+      <<: *default-logging
+
+  keydb:
+    container_name: "svc-web-analyzer-keydb"
+    image: eqalpha/keydb:alpine
+    networks:
+      - internal
+    ports:
+      - "${KEYDB_PORT:-6379}:6379"
+    env_file:
+      - .envrc
+    volumes:
+      - keydb-storage:/data
+    command: keydb-server --save 60 1 --loglevel warning --requirepass "${KEYDB_PASSWORD}"
+    healthcheck:
+      test: ["CMD", "keydb-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      retries: 3
+      start_period: 5s
+      timeout: 3s
+    restart: unless-stopped
+    logging:
+      <<: *default-logging
+
+  swagger-ui:
+    container_name: "svc-web-analyzer-swagger-ui"
+    image: swaggerapi/swagger-ui:v5.29.5
+    networks:
+      - internal
+    environment:
+      SWAGGER_JSON: /oas/svc-web-analyzer-swagger-v1.json
+    volumes:
+      - "./docs/openapi-spec/public:/oas"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.swagger-ui.loadbalancer.server.port=8080"
+      - "traefik.http.routers.swagger-ui.rule=Host(`docs.web-analyzer.dev`)"
+      - "traefik.http.routers.swagger-ui.entrypoints=websecure"
+      - "traefik.http.routers.swagger-ui.tls=true"
+    restart: unless-stopped
+    logging:
+      <<: *default-logging
+
+  web-app:
+    container_name: "svc-web-analyzer-web"
+    image: "svc-web-analyzer-web-app:latest"
+    profiles:
+      - development
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      target: development
+    networks:
+      - internal
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.web.loadbalancer.server.port=8080"
+      - "traefik.http.routers.web.rule=Host(`web-analyzer.dev`)"
+      - "traefik.http.routers.web.entrypoints=websecure"
+      - "traefik.http.routers.web.tls=true"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    depends_on:
+      backend-app:
+        condition: service_healthy
+      publisher:
+        condition: service_healthy
+      subscriber:
+        condition: service_healthy
+    volumes:
+      - "./web/src:/usr/share/nginx/html:ro"
+      - "./web/nginx.conf:/etc/nginx/nginx.conf:ro"
+    logging:
+      <<: *default-logging
+
+networks:
+  internal:
+
+secrets:
+  root_cert_file:
+    file: "./.certs/rootCA.pem"
+  cert_file:
+    file: "./.certs/star-web-analyzer-dev.crt"
+  key_file:
+    file: "./.certs/star-web-analyzer-dev.key"
+
+volumes:
+  vault-storage:
+  vault-logs-storage:
+  vault-config-storage:
+  postgres-storage:
+  rabbitmq-storage:
+  keydb-storage:

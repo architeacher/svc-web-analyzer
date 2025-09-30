@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -16,34 +18,31 @@ import (
 )
 
 const (
-	maxRetries           = 3
-	retryWaitTime        = 1 * time.Second
-	maxRetryWaitTime     = 5 * time.Second
-	defaultTimeout       = 30 * time.Second
-	maxRedirects         = 10
-	maxResponseSizeBytes = 10 * 1024 * 1024 // 10MB
+	minInputSize   = 3
+	maxInputSize   = 10000
+	defaultTimeout = 30 * time.Second
 )
 
-type WebPageFetcher struct {
+type WebFetcher struct {
 	client         *resty.Client
 	circuitBreaker *gobreaker.CircuitBreaker
-	logger         *infrastructure.Logger
+	logger         infrastructure.Logger
 	config         config.WebFetcherConfig
 }
 
-func NewWebPageFetcher(config config.WebFetcherConfig, logger *infrastructure.Logger) *WebPageFetcher {
+func NewWebFetcher(config config.WebFetcherConfig, logger infrastructure.Logger) *WebFetcher {
 	client := resty.New()
 
-	client.SetTimeout(defaultTimeout)
-	client.SetRetryCount(config.MaxRetries)
-	client.SetRetryWaitTime(config.RetryWaitTime)
-	client.SetRetryMaxWaitTime(config.MaxRetryWaitTime)
-	client.SetRedirectPolicy(resty.FlexibleRedirectPolicy(config.MaxRedirects))
+	client.SetTimeout(defaultTimeout).
+		SetRetryCount(config.MaxRetries).
+		SetRetryWaitTime(config.RetryWaitTime).
+		SetRetryMaxWaitTime(config.MaxRetryWaitTime).
+		SetRedirectPolicy(resty.FlexibleRedirectPolicy(config.MaxRedirects))
 
 	if config.UserAgent != "" {
 		client.SetHeader("User-Agent", config.UserAgent)
 	} else {
-		client.SetHeader("User-Agent", "WebPageAnalyzer/1.0")
+		client.SetHeader("User-Agent", "WebAnalyzer/1.0")
 	}
 
 	client.SetHeaders(map[string]string{
@@ -56,7 +55,7 @@ func NewWebPageFetcher(config config.WebFetcherConfig, logger *infrastructure.Lo
 	})
 
 	cbSettings := gobreaker.Settings{
-		Name:        "web-page-fetcher",
+		Name:        "web-fetcher",
 		MaxRequests: config.CircuitBreaker.MaxRequests,
 		Interval:    config.CircuitBreaker.Interval,
 		Timeout:     config.CircuitBreaker.Timeout,
@@ -69,13 +68,13 @@ func NewWebPageFetcher(config config.WebFetcherConfig, logger *infrastructure.Lo
 				Str("name", name).
 				Str("from", from.String()).
 				Str("to", to.String()).
-				Msg("Circuit breaker state changed")
+				Msg("circuit breaker state changed")
 		},
 	}
 
 	circuitBreaker := gobreaker.NewCircuitBreaker(cbSettings)
 
-	return &WebPageFetcher{
+	return &WebFetcher{
 		client:         client,
 		circuitBreaker: circuitBreaker,
 		logger:         logger,
@@ -83,7 +82,7 @@ func NewWebPageFetcher(config config.WebFetcherConfig, logger *infrastructure.Lo
 	}
 }
 
-func (f *WebPageFetcher) Fetch(ctx context.Context, targetURL string, timeout time.Duration) (*domain.WebPageContent, error) {
+func (f *WebFetcher) Fetch(ctx context.Context, targetURL string, timeout time.Duration) (*domain.WebPageContent, error) {
 	if err := f.validateURL(targetURL); err != nil {
 		return nil, domain.NewInvalidURLError(targetURL, err)
 	}
@@ -92,7 +91,7 @@ func (f *WebPageFetcher) Fetch(ctx context.Context, targetURL string, timeout ti
 		f.client.SetTimeout(timeout)
 	}
 
-	result, err := f.circuitBreaker.Execute(func() (interface{}, error) {
+	result, err := f.circuitBreaker.Execute(func() (any, error) {
 		return f.fetchWithRetry(ctx, targetURL)
 	})
 
@@ -101,8 +100,8 @@ func (f *WebPageFetcher) Fetch(ctx context.Context, targetURL string, timeout ti
 			f.logger.Warn().Str("url", targetURL).Msg("Circuit breaker is open")
 			return nil, domain.NewDomainError(
 				"CIRCUIT_BREAKER_OPEN",
-				"Service temporarily unavailable due to repeated failures",
-				503,
+				"service temporarily unavailable due to repeated failures",
+				http.StatusServiceUnavailable,
 				err,
 			)
 		}
@@ -112,12 +111,21 @@ func (f *WebPageFetcher) Fetch(ctx context.Context, targetURL string, timeout ti
 	return result.(*domain.WebPageContent), nil
 }
 
-func (f *WebPageFetcher) fetchWithRetry(ctx context.Context, targetURL string) (*domain.WebPageContent, error) {
+func (f *WebFetcher) fetchWithRetry(ctx context.Context, targetURL string) (*domain.WebPageContent, error) {
 	startTime := time.Now()
 
 	resp, err := f.client.R().
 		SetContext(ctx).
 		Get(targetURL)
+
+	if err != nil {
+		f.logger.Error().
+			Err(err).
+			Str("url", targetURL).
+			Msg("failed to fetch URL")
+
+		return nil, domain.NewURLNotReachableError(targetURL, 0, err)
+	}
 
 	duration := time.Since(startTime)
 
@@ -129,16 +137,7 @@ func (f *WebPageFetcher) fetchWithRetry(ctx context.Context, targetURL string) (
 		Str("content_type", resp.Header().Get("Content-Type")).
 		Msg("HTTP request completed")
 
-	if err != nil {
-		f.logger.Error().
-			Str("url", targetURL).
-			Str("error", err.Error()).
-			Msg("Failed to fetch URL")
-
-		return nil, domain.NewURLNotReachableError(targetURL, 0, err)
-	}
-
-	if resp.StatusCode() < 200 || resp.StatusCode() >= 300 {
+	if resp.StatusCode() < http.StatusOK || resp.StatusCode() >= http.StatusMultipleChoices {
 		f.logger.Warn().
 			Str("url", targetURL).
 			Int("status_code", resp.StatusCode()).
@@ -156,8 +155,8 @@ func (f *WebPageFetcher) fetchWithRetry(ctx context.Context, targetURL string) (
 			"RESPONSE_TOO_LARGE",
 			fmt.Sprintf("Response size %d bytes exceeds maximum allowed %d bytes",
 				len(resp.Body()), f.config.MaxResponseSizeBytes),
-			413,
-			fmt.Errorf("response too large"),
+			http.StatusRequestEntityTooLarge,
+			fmt.Errorf("response is too large"),
 		)
 	}
 
@@ -177,17 +176,26 @@ func (f *WebPageFetcher) fetchWithRetry(ctx context.Context, targetURL string) (
 	}
 
 	return &domain.WebPageContent{
-		URL:         resp.Request.URL,
-		StatusCode:  resp.StatusCode(),
-		HTML:        string(resp.Body()),
-		ContentType: contentType,
-		Headers:     headers,
+		URL:           resp.Request.URL,
+		StatusCode:    resp.StatusCode(),
+		HTML:          string(resp.Body()),
+		ContentType:   contentType,
+		Headers:       headers,
+		FetchDuration: duration,
 	}, nil
 }
 
-func (f *WebPageFetcher) validateURL(targetURL string) error {
+func (f *WebFetcher) validateURL(targetURL string) error {
 	if targetURL == "" {
 		return fmt.Errorf("URL cannot be empty")
+	}
+
+	// Validate URL length constraints (matching OpenAPI spec)
+	if len(targetURL) < minInputSize {
+		return fmt.Errorf("URL must be at least %d characters long", minInputSize)
+	}
+	if len(targetURL) > maxInputSize {
+		return fmt.Errorf("URL must not exceed %d characters", maxInputSize)
 	}
 
 	parsedURL, err := url.Parse(targetURL)
@@ -236,27 +244,24 @@ func isPrivateOrLocalURL(host string) bool {
 		}
 	}
 
-	// Check for private IP ranges
-	if strings.HasPrefix(hostLower, "10.") ||
-		strings.HasPrefix(hostLower, "172.16.") ||
-		strings.HasPrefix(hostLower, "172.17.") ||
-		strings.HasPrefix(hostLower, "172.18.") ||
-		strings.HasPrefix(hostLower, "172.19.") ||
-		strings.HasPrefix(hostLower, "172.20.") ||
-		strings.HasPrefix(hostLower, "172.21.") ||
-		strings.HasPrefix(hostLower, "172.22.") ||
-		strings.HasPrefix(hostLower, "172.23.") ||
-		strings.HasPrefix(hostLower, "172.24.") ||
-		strings.HasPrefix(hostLower, "172.25.") ||
-		strings.HasPrefix(hostLower, "172.26.") ||
-		strings.HasPrefix(hostLower, "172.27.") ||
-		strings.HasPrefix(hostLower, "172.28.") ||
-		strings.HasPrefix(hostLower, "172.29.") ||
-		strings.HasPrefix(hostLower, "172.30.") ||
-		strings.HasPrefix(hostLower, "172.31.") ||
-		strings.HasPrefix(hostLower, "192.168.") {
-		return true
+	if i := strings.LastIndexByte(host, ':'); i != -1 {
+		host = host[:i] // strip port if present
 	}
 
-	return false
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+
+	ip = ip.To4()
+	if ip == nil {
+		return false
+	}
+
+	// 10.0.0.0/8
+	return ip[0] == 10 ||
+		// 172.16.0.0/12
+		(ip[0] == 172 && ip[1] >= 16 && ip[1] <= 31) ||
+		// 192.168.0.0/16
+		(ip[0] == 192 && ip[1] == 168)
 }

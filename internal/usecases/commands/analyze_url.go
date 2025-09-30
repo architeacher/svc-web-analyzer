@@ -26,7 +26,7 @@ type (
 
 func NewAnalyzeCommandHandler(
 	analysisService service.ApplicationService,
-	logger *infrastructure.Logger,
+	logger infrastructure.Logger,
 	tracerProvider otelTrace.TracerProvider,
 	metricsClient decorator.MetricsClient,
 ) AnalyzeCommandHandler {

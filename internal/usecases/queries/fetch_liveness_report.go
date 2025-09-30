@@ -21,7 +21,7 @@ type (
 )
 
 func NewFetchLivenessReportQueryHandler(appService service.ApplicationService,
-	logger *infrastructure.Logger,
+	logger infrastructure.Logger,
 	tracerProvider trace.TracerProvider,
 	metricsClient decorator.MetricsClient,
 ) decorator.QueryHandler[FetchLivenessReportQuery, *domain.LivenessResult] {

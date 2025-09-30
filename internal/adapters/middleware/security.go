@@ -31,7 +31,7 @@ func (mw SecurityHeadersMiddleware) Middleware(next http.Handler) http.Handler {
 func (mw SecurityHeadersMiddleware) addCORSHeaders(w http.ResponseWriter) SecurityHeadersMiddleware {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-PASTEO-Token, API-Version")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-PASETO-Token, API-Version")
 
 	return mw
 }
@@ -42,7 +42,7 @@ func (mw SecurityHeadersMiddleware) addSecurityHeaders(w http.ResponseWriter) Se
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("X-XSS-Protection", "1; mode=block")
 	w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
-	w.Header().Set("Content-Security-Policy", "default-src 'self'")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self'")
 	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 	w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 

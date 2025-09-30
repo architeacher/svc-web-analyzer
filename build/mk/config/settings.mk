@@ -23,3 +23,6 @@ PLUS := ${ITEM_CLR}[${NO_CLR}${WARN_CLR}+${NO_CLR}${ITEM_CLR}]${NO_CLR}
 
 MSG_PRFX := ==>
 MSG_SFX := ...
+
+## Set an output prefix, which is the local directory if not specified.
+ARTIFACTS_DIR ?= ${CURDIR}/.artifacts

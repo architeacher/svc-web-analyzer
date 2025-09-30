@@ -21,7 +21,7 @@ type (
 )
 
 func NewFetchHealthReportQueryHandler(appService service.ApplicationService,
-	logger *infrastructure.Logger,
+	logger infrastructure.Logger,
 	tracerProvider trace.TracerProvider,
 	metricsClient decorator.MetricsClient,
 ) decorator.QueryHandler[FetchHealthReportQuery, *domain.HealthResult] {

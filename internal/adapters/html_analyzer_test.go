@@ -16,17 +16,14 @@ import (
 // HTMLAnalyzerTestSuite implements a custom test suite pattern for HTML analyzer tests
 type HTMLAnalyzerTestSuite struct {
 	analyzer *HTMLAnalyzer
-	logger   *infrastructure.Logger
+	logger   infrastructure.Logger
 	t        *testing.T
 }
 
 // newHTMLAnalyzerTestSuite creates a new test suite instance
 func newHTMLAnalyzerTestSuite(t *testing.T) *HTMLAnalyzerTestSuite {
-	nopLogger := zerolog.Nop()
-	logger := &infrastructure.Logger{Logger: &nopLogger}
-
 	return &HTMLAnalyzerTestSuite{
-		logger: logger,
+		logger: infrastructure.Logger{Logger: zerolog.Nop()},
 		t:      t,
 	}
 }

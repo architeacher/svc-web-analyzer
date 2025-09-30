@@ -17,7 +17,7 @@ cmd = "pkill -TERM /tmp/web-analyzer-publisher &>/dev/null && echo 'web analyzer
 delay = 1000 # ms
 
 # Ignore these filename extensions or directories.
-exclude_dir = ["assets", "bin", "migrations", "mocks", "node_modules", "scripts", "tmp", "var", "web"]
+exclude_dir = [".artifacts", ".certs", ".claude", ".github", ".trees", "assets", "build", "deployments", "docs", "itest", "migrations", "mocks", "node_modules", "scripts", "web"]
 
 # Exclude files.
 exclude_file = []

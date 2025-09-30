@@ -13,8 +13,8 @@ import (
 // Queue represents the main queue interface for publishing and consuming messages
 type Queue interface {
 	// Publisher operations
-	Publish(ctx context.Context, exchange, routingKey string, payload interface{}) error
-	PublishWithOptions(ctx context.Context, exchange, routingKey string, payload interface{}, opts ...publisherOption) error
+	Publish(ctx context.Context, exchange, routingKey string, payload any) error
+	PublishWithOptions(ctx context.Context, exchange, routingKey string, payload any, opts ...publisherOption) error
 
 	// Consumer operations
 	Consume(ctx context.Context, queue, consumer string, handler MessageHandler, opts ...consumerOption) error
@@ -152,12 +152,12 @@ func (q *RabbitMQQueue) BindQueue(queueName, routingKey, exchangeName string) er
 }
 
 // Publish publishes a message to an exchange with default options
-func (q *RabbitMQQueue) Publish(ctx context.Context, exchange, routingKey string, payload interface{}) error {
+func (q *RabbitMQQueue) Publish(ctx context.Context, exchange, routingKey string, payload any) error {
 	return q.PublishWithOptions(ctx, exchange, routingKey, payload)
 }
 
 // PublishWithOptions publishes a message to an exchange with custom options
-func (q *RabbitMQQueue) PublishWithOptions(ctx context.Context, exchange, routingKey string, payload interface{}, opts ...publisherOption) error {
+func (q *RabbitMQQueue) PublishWithOptions(ctx context.Context, exchange, routingKey string, payload any, opts ...publisherOption) error {
 	if !q.IsConnected() {
 		return fmt.Errorf("not connected to RabbitMQ")
 	}

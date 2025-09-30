@@ -19,7 +19,7 @@ type (
 
 func ApplyCommandDecorators[C Command, R any](
 	handler CommandHandler[C, R],
-	logger *infrastructure.Logger,
+	logger infrastructure.Logger,
 	tracerProvider otelTrace.TracerProvider,
 	metricsClient MetricsClient,
 ) CommandHandler[C, R] {

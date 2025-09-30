@@ -10,10 +10,10 @@ import (
 )
 
 type Logger struct {
-	*zerolog.Logger
+	zerolog.Logger
 }
 
-func New(cfg config.LoggingConfig) *Logger {
+func New(cfg config.LoggingConfig) Logger {
 	var level zerolog.Level
 	switch strings.ToLower(cfg.Level) {
 	case "debug":
@@ -42,7 +42,7 @@ func New(cfg config.LoggingConfig) *Logger {
 
 	logger = logger.With().Timestamp().Logger()
 
-	return &Logger{
-		Logger: &logger,
+	return Logger{
+		Logger: logger,
 	}
 }

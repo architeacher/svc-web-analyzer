@@ -34,3 +34,15 @@ AnalysisData:
       $ref: './links.yaml#/LinkAnalysis'
     forms:
       $ref: './forms.yaml#/FormAnalysis'
+    fetch_time_ms:
+      type: integer
+      format: int64
+      minimum: 0
+      description: Time spent fetching web page content from the target URL in milliseconds
+      example: 342
+    processing_time_ms:
+      type: integer
+      format: int64
+      minimum: 0
+      description: Time spent analyzing the HTML content in milliseconds
+      example: 125

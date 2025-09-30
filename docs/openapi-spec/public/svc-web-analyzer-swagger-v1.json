@@ -582,6 +582,17 @@
                         "completed"
                       ]
                     },
+                    "content_hash": {
+                      "type": "string",
+                      "description": "SHA-256 hash of the analyzed content",
+                      "example": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                    },
+                    "content_size": {
+                      "type": "integer",
+                      "format": "int64",
+                      "description": "Size of the analyzed content in bytes",
+                      "example": 1234
+                    },
                     "created_at": {
                       "type": "string",
                       "format": "date-time"
@@ -717,6 +728,20 @@
                               }
                             }
                           }
+                        },
+                        "fetch_time_ms": {
+                          "type": "integer",
+                          "format": "int64",
+                          "minimum": 0,
+                          "description": "Time spent fetching web page content from the target URL in milliseconds",
+                          "example": 342
+                        },
+                        "processing_time_ms": {
+                          "type": "integer",
+                          "format": "int64",
+                          "minimum": 0,
+                          "description": "Time spent analyzing the HTML content in milliseconds",
+                          "example": 125
                         }
                       }
                     }
@@ -729,6 +754,8 @@
                       "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
                       "url": "https://example.com",
                       "status": "completed",
+                      "content_hash": "a591a6d40bf420404a011733cfb7b190d62c65bf0bcda32b57b277d9ad9f146e",
+                      "content_size": 1256,
                       "created_at": "2025-01-15T10:30:00Z",
                       "completed_at": "2025-01-15T10:30:15Z",
                       "duration": "15s",
@@ -773,7 +800,9 @@
                               ]
                             }
                           ]
-                        }
+                        },
+                        "fetch_time_ms": 342,
+                        "processing_time_ms": 125
                       }
                     }
                   },
@@ -783,6 +812,8 @@
                       "analysis_id": "550e8400-e29b-41d4-a716-446655440001",
                       "url": "https://github.com",
                       "status": "completed",
+                      "content_hash": "7b3f8d9e2c1a5f6b8e4d7c9a3b2f1e5d4c8b9a7f6e5d4c3b2a1f0e9d8c7b6a5",
+                      "content_size": 52347,
                       "created_at": "2025-01-15T10:35:00Z",
                       "completed_at": "2025-01-15T10:35:45Z",
                       "duration": "45s",
@@ -816,7 +847,9 @@
                               ]
                             }
                           ]
-                        }
+                        },
+                        "fetch_time_ms": 1856,
+                        "processing_time_ms": 487
                       }
                     }
                   }
@@ -1037,7 +1070,7 @@
         ],
         "security": [
           {
-            "PasetoAuth": []
+            "PasetoQueryAuth": []
           }
         ],
         "parameters": [
@@ -1064,6 +1097,15 @@
               "format": "uuid"
             },
             "description": "The unique identifier of the analysis"
+          },
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PASETO authentication token for SSE connection"
           }
         ],
         "responses": {
@@ -1116,10 +1158,11 @@
                       "type": "string",
                       "enum": [
                         "OK",
+                        "DEGRADED",
                         "DOWN",
                         "MAINTENANCE"
                       ],
-                      "description": "Service liveness status"
+                      "description": "Service liveness status - OK if service is running, DEGRADED if running with reduced capacity"
                     },
                     "timestamp": {
                       "type": "string",
@@ -1170,10 +1213,11 @@
                       "type": "string",
                       "enum": [
                         "OK",
+                        "DEGRADED",
                         "DOWN",
                         "MAINTENANCE"
                       ],
-                      "description": "Service liveness status"
+                      "description": "Service liveness status - OK if service is running, DEGRADED if running with reduced capacity"
                     },
                     "timestamp": {
                       "type": "string",
@@ -1229,10 +1273,11 @@
                       "type": "string",
                       "enum": [
                         "OK",
+                        "DEGRADED",
                         "DOWN",
                         "MAINTENANCE"
                       ],
-                      "description": "Overall readiness status - ready only if all dependencies are healthy"
+                      "description": "Overall readiness status - ready only if all dependencies are healthy, DEGRADED if some non-critical dependencies are unhealthy"
                     },
                     "timestamp": {
                       "type": "string",
@@ -1258,6 +1303,7 @@
                               "type": "string",
                               "enum": [
                                 "healthy",
+                                "degraded",
                                 "unhealthy",
                                 "unknown"
                               ],
@@ -1285,6 +1331,7 @@
                               "type": "string",
                               "enum": [
                                 "healthy",
+                                "degraded",
                                 "unhealthy",
                                 "unknown"
                               ],
@@ -1312,6 +1359,7 @@
                               "type": "string",
                               "enum": [
                                 "healthy",
+                                "degraded",
                                 "unhealthy",
                                 "unknown"
                               ],
@@ -1340,6 +1388,7 @@
                             "type": "string",
                             "enum": [
                               "healthy",
+                              "degraded",
                               "unhealthy",
                               "unknown"
                             ],
@@ -1428,10 +1477,11 @@
                       "type": "string",
                       "enum": [
                         "OK",
+                        "DEGRADED",
                         "DOWN",
                         "MAINTENANCE"
                       ],
-                      "description": "Overall readiness status - ready only if all dependencies are healthy"
+                      "description": "Overall readiness status - ready only if all dependencies are healthy, DEGRADED if some non-critical dependencies are unhealthy"
                     },
                     "timestamp": {
                       "type": "string",
@@ -1457,6 +1507,7 @@
                               "type": "string",
                               "enum": [
                                 "healthy",
+                                "degraded",
                                 "unhealthy",
                                 "unknown"
                               ],
@@ -1484,6 +1535,7 @@
                               "type": "string",
                               "enum": [
                                 "healthy",
+                                "degraded",
                                 "unhealthy",
                                 "unknown"
                               ],
@@ -1511,6 +1563,7 @@
                               "type": "string",
                               "enum": [
                                 "healthy",
+                                "degraded",
                                 "unhealthy",
                                 "unknown"
                               ],
@@ -1539,6 +1592,7 @@
                             "type": "string",
                             "enum": [
                               "healthy",
+                              "degraded",
                               "unhealthy",
                               "unknown"
                             ],
@@ -1622,10 +1676,11 @@
                       "type": "string",
                       "enum": [
                         "OK",
+                        "DEGRADED",
                         "DOWN",
                         "MAINTENANCE"
                       ],
-                      "description": "Overall health status - OK only if all dependencies are healthy"
+                      "description": "Overall health status - OK only if all dependencies are healthy, DEGRADED if some non-critical dependencies are unhealthy"
                     },
                     "timestamp": {
                       "type": "string",
@@ -1656,6 +1711,7 @@
                               "type": "string",
                               "enum": [
                                 "healthy",
+                                "degraded",
                                 "unhealthy",
                                 "unknown"
                               ],
@@ -1695,6 +1751,7 @@
                                   "type": "string",
                                   "enum": [
                                     "healthy",
+                                    "degraded",
                                     "unhealthy",
                                     "unknown"
                                   ],
@@ -1814,6 +1871,7 @@
                               "type": "string",
                               "enum": [
                                 "healthy",
+                                "degraded",
                                 "unhealthy",
                                 "unknown"
                               ],
@@ -1852,6 +1910,7 @@
                             "type": "string",
                             "enum": [
                               "healthy",
+                              "degraded",
                               "unhealthy",
                               "unknown"
                             ],
@@ -1972,10 +2031,11 @@
                       "type": "string",
                       "enum": [
                         "OK",
+                        "DEGRADED",
                         "DOWN",
                         "MAINTENANCE"
                       ],
-                      "description": "Overall health status - OK only if all dependencies are healthy"
+                      "description": "Overall health status - OK only if all dependencies are healthy, DEGRADED if some non-critical dependencies are unhealthy"
                     },
                     "timestamp": {
                       "type": "string",
@@ -2006,6 +2066,7 @@
                               "type": "string",
                               "enum": [
                                 "healthy",
+                                "degraded",
                                 "unhealthy",
                                 "unknown"
                               ],
@@ -2045,6 +2106,7 @@
                                   "type": "string",
                                   "enum": [
                                     "healthy",
+                                    "degraded",
                                     "unhealthy",
                                     "unknown"
                                   ],
@@ -2164,6 +2226,7 @@
                               "type": "string",
                               "enum": [
                                 "healthy",
+                                "degraded",
                                 "unhealthy",
                                 "unknown"
                               ],
@@ -2202,6 +2265,7 @@
                             "type": "string",
                             "enum": [
                               "healthy",
+                              "degraded",
                               "unhealthy",
                               "unknown"
                             ],
@@ -2307,6 +2371,12 @@
         "type": "http",
         "scheme": "basic",
         "description": "Basic HTTP authentication for administrative endpoints"
+      },
+      "PasetoQueryAuth": {
+        "type": "apiKey",
+        "in": "query",
+        "name": "token",
+        "description": "PASETO token passed as query parameter for EventSource connections.\nUsed for SSE endpoints where custom headers are not supported by browsers.\nFormat: v4.local.{payload} or v4.public.{payload}.{signature}\n"
       }
     },
     "schemas": {
@@ -2404,6 +2474,17 @@
             "enum": [
               "completed"
             ]
+          },
+          "content_hash": {
+            "type": "string",
+            "description": "SHA-256 hash of the analyzed content",
+            "example": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "content_size": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Size of the analyzed content in bytes",
+            "example": 1234
           },
           "created_at": {
             "type": "string",
@@ -2540,6 +2621,20 @@
                     }
                   }
                 }
+              },
+              "fetch_time_ms": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0,
+                "description": "Time spent fetching web page content from the target URL in milliseconds",
+                "example": 342
+              },
+              "processing_time_ms": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0,
+                "description": "Time spent analyzing the HTML content in milliseconds",
+                "example": 125
               }
             }
           }
@@ -2618,10 +2713,11 @@
             "type": "string",
             "enum": [
               "OK",
+              "DEGRADED",
               "DOWN",
               "MAINTENANCE"
             ],
-            "description": "Service liveness status"
+            "description": "Service liveness status - OK if service is running, DEGRADED if running with reduced capacity"
           },
           "timestamp": {
             "type": "string",
@@ -2647,10 +2743,11 @@
             "type": "string",
             "enum": [
               "OK",
+              "DEGRADED",
               "DOWN",
               "MAINTENANCE"
             ],
-            "description": "Overall readiness status - ready only if all dependencies are healthy"
+            "description": "Overall readiness status - ready only if all dependencies are healthy, DEGRADED if some non-critical dependencies are unhealthy"
           },
           "timestamp": {
             "type": "string",
@@ -2676,6 +2773,7 @@
                     "type": "string",
                     "enum": [
                       "healthy",
+                      "degraded",
                       "unhealthy",
                       "unknown"
                     ],
@@ -2703,6 +2801,7 @@
                     "type": "string",
                     "enum": [
                       "healthy",
+                      "degraded",
                       "unhealthy",
                       "unknown"
                     ],
@@ -2730,6 +2829,7 @@
                     "type": "string",
                     "enum": [
                       "healthy",
+                      "degraded",
                       "unhealthy",
                       "unknown"
                     ],
@@ -2758,6 +2858,7 @@
                   "type": "string",
                   "enum": [
                     "healthy",
+                    "degraded",
                     "unhealthy",
                     "unknown"
                   ],
@@ -2790,10 +2891,11 @@
             "type": "string",
             "enum": [
               "OK",
+              "DEGRADED",
               "DOWN",
               "MAINTENANCE"
             ],
-            "description": "Overall health status - OK only if all dependencies are healthy"
+            "description": "Overall health status - OK only if all dependencies are healthy, DEGRADED if some non-critical dependencies are unhealthy"
           },
           "timestamp": {
             "type": "string",
@@ -2824,6 +2926,7 @@
                     "type": "string",
                     "enum": [
                       "healthy",
+                      "degraded",
                       "unhealthy",
                       "unknown"
                     ],
@@ -2863,6 +2966,7 @@
                         "type": "string",
                         "enum": [
                           "healthy",
+                          "degraded",
                           "unhealthy",
                           "unknown"
                         ],
@@ -2982,6 +3086,7 @@
                     "type": "string",
                     "enum": [
                       "healthy",
+                      "degraded",
                       "unhealthy",
                       "unknown"
                     ],
@@ -3020,6 +3125,7 @@
                   "type": "string",
                   "enum": [
                     "healthy",
+                    "degraded",
                     "unhealthy",
                     "unknown"
                   ],
@@ -3172,6 +3278,20 @@
                 }
               }
             }
+          },
+          "fetch_time_ms": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Time spent fetching web page content from the target URL in milliseconds",
+            "example": 342
+          },
+          "processing_time_ms": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Time spent analyzing the HTML content in milliseconds",
+            "example": 125
           }
         }
       },
@@ -3362,6 +3482,7 @@
             "type": "string",
             "enum": [
               "healthy",
+              "degraded",
               "unhealthy",
               "unknown"
             ],
@@ -3389,6 +3510,7 @@
             "type": "string",
             "enum": [
               "healthy",
+              "degraded",
               "unhealthy",
               "unknown"
             ],
@@ -3491,6 +3613,7 @@
                 "type": "string",
                 "enum": [
                   "healthy",
+                  "degraded",
                   "unhealthy",
                   "unknown"
                 ],

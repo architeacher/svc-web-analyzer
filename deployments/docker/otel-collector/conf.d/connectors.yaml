@@ -1,0 +1,7 @@
+#count:
+#  spanevents:
+#    local.event.count:
+#      description: The number of span events from my local environment.
+#      conditions:
+#        - 'attributes["env"] == "local"'
+#        - 'name == "localEvent"'

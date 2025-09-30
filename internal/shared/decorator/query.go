@@ -18,7 +18,7 @@ type (
 
 func ApplyQueryDecorators[Q Query, R Result](
 	handler QueryHandler[Q, R],
-	logger *infrastructure.Logger,
+	logger infrastructure.Logger,
 	tracerProvider otelTrace.TracerProvider,
 	metricsClient MetricsClient,
 ) QueryHandler[Q, R] {

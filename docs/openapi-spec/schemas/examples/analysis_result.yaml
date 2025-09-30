@@ -4,6 +4,8 @@ completed_analysis:
     analysis_id: "550e8400-e29b-41d4-a716-446655440000"
     url: "https://example.com"
     status: "completed"
+    content_hash: "a591a6d40bf420404a011733cfb7b190d62c65bf0bcda32b57b277d9ad9f146e"
+    content_size: 1256
     created_at: "2025-01-15T10:30:00Z"
     completed_at: "2025-01-15T10:30:15Z"
     duration: "15s"
@@ -35,6 +37,8 @@ completed_analysis:
           - method: "POST"
             action: "/login"
             fields: ["username", "password"]
+      fetch_time_ms: 342
+      processing_time_ms: 125
 
 github_analysis:
   summary: GitHub homepage analysis
@@ -42,6 +46,8 @@ github_analysis:
     analysis_id: "550e8400-e29b-41d4-a716-446655440001"
     url: "https://github.com"
     status: "completed"
+    content_hash: "7b3f8d9e2c1a5f6b8e4d7c9a3b2f1e5d4c8b9a7f6e5d4c3b2a1f0e9d8c7b6a5"
+    content_size: 52347
     created_at: "2025-01-15T10:35:00Z"
     completed_at: "2025-01-15T10:35:45Z"
     duration: "45s"
@@ -67,3 +73,5 @@ github_analysis:
           - method: "POST"
             action: "/session"
             fields: ["login", "password"]
+      fetch_time_ms: 1856
+      processing_time_ms: 487

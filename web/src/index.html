@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Analyzer</title>
+    <link rel="stylesheet" href="styles.css?v=20251003">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔍</text></svg>">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔍 Web Analyzer</h1>
+            <p>Analyze web pages and get detailed insights about HTML structure, links, and forms</p>
+        </header>
+
+        <main>
+            <form id="analyzeForm" class="analyze-form">
+                <div class="input-group">
+                    <label for="urlInput">Enter URL to analyze:</label>
+                    <input
+                        type="url"
+                        id="urlInput"
+                        placeholder="https://example.com"
+                        required
+                        autocomplete="url"
+                    >
+                </div>
+                <button type="submit" id="analyzeButton" class="analyze-button">
+                    <span class="button-text">Analyze</span>
+                    <span class="spinner hidden">⏳</span>
+                </button>
+            </form>
+
+            <div id="results" class="results hidden">
+                <h2>Analysis Results</h2>
+                <div id="analysisInfo" class="analysis-info"></div>
+                <div id="progressContainer" class="progress-container hidden">
+                    <h3>Progress</h3>
+                    <div class="progress-bar">
+                        <div id="progressFill" class="progress-fill"></div>
+                    </div>
+                    <div id="progressText" class="progress-text"></div>
+                    <div id="progressLog" class="progress-log"></div>
+                </div>
+                <div id="analysisResults" class="analysis-results hidden"></div>
+            </div>
+
+            <div id="error" class="error hidden">
+                <h3>❌ Error</h3>
+                <p id="errorMessage"></p>
+            </div>
+        </main>
+
+        <footer>
+            <p>Built with ❤️ using Vanilla JavaScript</p>
+            <p style="font-size: 0.85rem; opacity: 0.7; margin-top: 0.5rem;">
+                💡 Psst... try the Konami code: <code style="background: rgba(255,255,255,0.2); padding: 0.2rem 0.4rem; border-radius: 4px;">↑↑↓↓←→←→BA</code>
+            </p>
+        </footer>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.4/dist/confetti.browser.min.js"></script>
+    <script src="sounds.js?v=20251003"></script>
+    <script src="app.js?v=20251003"></script>
+</body>
+</html>

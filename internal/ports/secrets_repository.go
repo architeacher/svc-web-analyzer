@@ -1,3 +1,5 @@
+//go:generate go tool github.com/maxbrunsfeld/counterfeiter/v6 -generate
+
 package ports
 
 import (
@@ -5,6 +7,8 @@ import (
 
 	"github.com/hashicorp/vault/api"
 )
+
+//counterfeiter:generate -o ../mocks/secrets_repository.go . SecretsRepository
 
 type (
 	SecretsRepository interface {
