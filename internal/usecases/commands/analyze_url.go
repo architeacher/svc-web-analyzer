@@ -4,31 +4,32 @@ import (
 	"context"
 
 	"github.com/architeacher/svc-web-analyzer/internal/domain"
-	"github.com/architeacher/svc-web-analyzer/internal/infrastructure"
+	"github.com/architeacher/svc-web-analyzer/internal/ports"
 	"github.com/architeacher/svc-web-analyzer/internal/service"
 	"github.com/architeacher/svc-web-analyzer/internal/shared/decorator"
+	appLogger "github.com/architeacher/svc-web-analyzer/pkg/logger"
 	otelTrace "go.opentelemetry.io/otel/trace"
 )
 
 type (
 	AnalyzeCommand struct {
-		URL     string                 `json:"url"`
-		Options domain.AnalysisOptions `json:"options"`
+		URL     string
+		Options domain.AnalysisOptions
 	}
 
 	AnalyzeCommandHandler decorator.CommandHandler[AnalyzeCommand, *domain.Analysis]
 
 	analyzeCommandHandler struct {
 		analysisService service.ApplicationService
-		logger          *infrastructure.Logger
+		logger          appLogger.Logger
 	}
 )
 
 func NewAnalyzeCommandHandler(
 	analysisService service.ApplicationService,
-	logger *infrastructure.Logger,
+	logger appLogger.Logger,
 	tracerProvider otelTrace.TracerProvider,
-	metricsClient decorator.MetricsClient,
+	metricsClient ports.MetricsClient,
 ) AnalyzeCommandHandler {
 	return decorator.ApplyCommandDecorators[AnalyzeCommand, *domain.Analysis](
 		analyzeCommandHandler{analysisService: analysisService},

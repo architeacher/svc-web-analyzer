@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/architeacher/svc-web-analyzer/internal/infrastructure"
+	appLogger "github.com/architeacher/svc-web-analyzer/pkg/logger"
 )
 
 type commandLoggingDecorator[C Command, R any] struct {
 	base   CommandHandler[C, R]
-	logger *infrastructure.Logger
+	logger appLogger.Logger
 }
 
 func (d commandLoggingDecorator[C, R]) Handle(ctx context.Context, cmd C) (result R, err error) {
@@ -32,7 +32,7 @@ func (d commandLoggingDecorator[C, R]) Handle(ctx context.Context, cmd C) (resul
 
 type queryLoggingDecorator[Q Query, R Result] struct {
 	base   QueryHandler[Q, R]
-	logger *infrastructure.Logger
+	logger appLogger.Logger
 }
 
 func (d queryLoggingDecorator[Q, R]) Execute(ctx context.Context, query Q) (result R, err error) {

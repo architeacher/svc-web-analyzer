@@ -7,8 +7,7 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/architeacher/svc-web-analyzer/internal/domain"
-	"github.com/architeacher/svc-web-analyzer/internal/infrastructure"
-	"github.com/rs/zerolog"
+	appLogger "github.com/architeacher/svc-web-analyzer/pkg/logger"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -16,17 +15,14 @@ import (
 // HTMLAnalyzerTestSuite implements a custom test suite pattern for HTML analyzer tests
 type HTMLAnalyzerTestSuite struct {
 	analyzer *HTMLAnalyzer
-	logger   *infrastructure.Logger
+	logger   appLogger.Logger
 	t        *testing.T
 }
 
 // newHTMLAnalyzerTestSuite creates a new test suite instance
 func newHTMLAnalyzerTestSuite(t *testing.T) *HTMLAnalyzerTestSuite {
-	nopLogger := zerolog.Nop()
-	logger := &infrastructure.Logger{Logger: &nopLogger}
-
 	return &HTMLAnalyzerTestSuite{
-		logger: logger,
+		logger: appLogger.NewTestLogger(),
 		t:      t,
 	}
 }

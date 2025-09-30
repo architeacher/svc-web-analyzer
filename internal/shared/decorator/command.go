@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/architeacher/svc-web-analyzer/internal/infrastructure"
+	"github.com/architeacher/svc-web-analyzer/internal/ports"
+	appLogger "github.com/architeacher/svc-web-analyzer/pkg/logger"
 	otelTrace "go.opentelemetry.io/otel/trace"
 )
 
@@ -19,9 +20,9 @@ type (
 
 func ApplyCommandDecorators[C Command, R any](
 	handler CommandHandler[C, R],
-	logger *infrastructure.Logger,
+	logger appLogger.Logger,
 	tracerProvider otelTrace.TracerProvider,
-	metricsClient MetricsClient,
+	metricsClient ports.MetricsClient,
 ) CommandHandler[C, R] {
 	return commandLoggingDecorator[C, R]{
 		base: commandTracingDecorator[C, R]{

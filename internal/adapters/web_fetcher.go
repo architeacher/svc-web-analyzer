@@ -2,48 +2,67 @@ package adapters
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/architeacher/svc-web-analyzer/internal/config"
 	"github.com/architeacher/svc-web-analyzer/internal/domain"
-	"github.com/architeacher/svc-web-analyzer/internal/infrastructure"
+	"github.com/architeacher/svc-web-analyzer/internal/ports"
+	"github.com/architeacher/svc-web-analyzer/internal/shared/backoff"
+	appLogger "github.com/architeacher/svc-web-analyzer/pkg/logger"
+	"github.com/architeacher/svc-web-analyzer/pkg/resilience"
 	"github.com/go-resty/resty/v2"
 	"github.com/sony/gobreaker"
 )
 
 const (
-	maxRetries           = 3
-	retryWaitTime        = 1 * time.Second
-	maxRetryWaitTime     = 5 * time.Second
-	defaultTimeout       = 30 * time.Second
-	maxRedirects         = 10
-	maxResponseSizeBytes = 10 * 1024 * 1024 // 10MB
+	minInputSize   = 3
+	maxInputSize   = 10000
+	defaultTimeout = 30 * time.Second
 )
 
-type WebPageFetcher struct {
-	client         *resty.Client
-	circuitBreaker *gobreaker.CircuitBreaker
-	logger         *infrastructure.Logger
-	config         config.WebFetcherConfig
-}
+type (
+	CacheClient interface {
+		Get(ctx context.Context, key string) ([]byte, error)
+		Set(ctx context.Context, key string, value []byte, ttl time.Duration) error
+	}
 
-func NewWebPageFetcher(config config.WebFetcherConfig, logger *infrastructure.Logger) *WebPageFetcher {
+	WebFetcher struct {
+		client         *resty.Client
+		circuitBreaker *resilience.CircuitBreakerWrapper
+		retry          *resilience.RetryWrapper
+		cache          CacheClient
+		logger         appLogger.Logger
+		metrics        ports.MetricsClient
+		config         config.WebFetcherConfig
+	}
+
+	fallbackChainAdapter struct {
+		chain *resilience.FallbackChain
+	}
+)
+
+func NewWebFetcher(
+	cfg config.WebFetcherConfig,
+	cache CacheClient,
+	logger appLogger.Logger,
+	metrics ports.MetricsClient,
+) *WebFetcher {
 	client := resty.New()
 
-	client.SetTimeout(defaultTimeout)
-	client.SetRetryCount(config.MaxRetries)
-	client.SetRetryWaitTime(config.RetryWaitTime)
-	client.SetRetryMaxWaitTime(config.MaxRetryWaitTime)
-	client.SetRedirectPolicy(resty.FlexibleRedirectPolicy(config.MaxRedirects))
+	client.SetTimeout(defaultTimeout).
+		SetRetryCount(0). // Disable Resty's built-in retry, use our retry wrapper
+		SetRedirectPolicy(resty.FlexibleRedirectPolicy(int(cfg.MaxRedirects)))
 
-	if config.UserAgent != "" {
-		client.SetHeader("User-Agent", config.UserAgent)
-	} else {
-		client.SetHeader("User-Agent", "WebPageAnalyzer/1.0")
+	client.SetHeader("User-Agent", "WebAnalyzer/1.0")
+	if cfg.UserAgent != "" {
+		client.SetHeader("User-Agent", cfg.UserAgent)
 	}
 
 	client.SetHeaders(map[string]string{
@@ -55,35 +74,38 @@ func NewWebPageFetcher(config config.WebFetcherConfig, logger *infrastructure.Lo
 		"Upgrade-Insecure-Requests": "1",
 	})
 
-	cbSettings := gobreaker.Settings{
-		Name:        "web-page-fetcher",
-		MaxRequests: config.CircuitBreaker.MaxRequests,
-		Interval:    config.CircuitBreaker.Interval,
-		Timeout:     config.CircuitBreaker.Timeout,
-		ReadyToTrip: func(counts gobreaker.Counts) bool {
-			failureRatio := float64(counts.TotalFailures) / float64(counts.Requests)
-			return counts.Requests >= 3 && failureRatio >= 0.6
-		},
-		OnStateChange: func(name string, from gobreaker.State, to gobreaker.State) {
-			logger.Info().
-				Str("name", name).
-				Str("from", from.String()).
-				Str("to", to.String()).
-				Msg("Circuit breaker state changed")
-		},
+	cbConfig := resilience.CircuitBreakerConfig{
+		Name:             "web-fetcher",
+		MaxRequests:      cfg.CircuitBreaker.MaxRequests,
+		Interval:         cfg.CircuitBreaker.Interval,
+		Timeout:          cfg.CircuitBreaker.Timeout,
+		FailureThreshold: 0.6,
 	}
 
-	circuitBreaker := gobreaker.NewCircuitBreaker(cbSettings)
+	backoffConfig := backoff.NewExponentialStrategy(config.BackoffConfig{
+		BaseDelay:  time.Second,
+		Multiplier: 1.6,
+		Jitter:     0.2,
+		MaxDelay:   10 * time.Second,
+	})
 
-	return &WebPageFetcher{
+	retryConfig := resilience.RetryConfig{
+		MaxRetries:      int(cfg.MaxRetries),
+		BackoffStrategy: backoffConfig,
+	}
+
+	return &WebFetcher{
 		client:         client,
-		circuitBreaker: circuitBreaker,
+		circuitBreaker: resilience.NewCircuitBreaker(cbConfig, logger, metrics),
+		retry:          resilience.NewRetryWrapper(retryConfig, logger, metrics),
+		cache:          cache,
 		logger:         logger,
-		config:         config,
+		metrics:        metrics,
+		config:         cfg,
 	}
 }
 
-func (f *WebPageFetcher) Fetch(ctx context.Context, targetURL string, timeout time.Duration) (*domain.WebPageContent, error) {
+func (f *WebFetcher) Fetch(ctx context.Context, targetURL string, timeout time.Duration) (*domain.WebPageContent, error) {
 	if err := f.validateURL(targetURL); err != nil {
 		return nil, domain.NewInvalidURLError(targetURL, err)
 	}
@@ -92,32 +114,123 @@ func (f *WebPageFetcher) Fetch(ctx context.Context, targetURL string, timeout ti
 		f.client.SetTimeout(timeout)
 	}
 
-	result, err := f.circuitBreaker.Execute(func() (interface{}, error) {
-		return f.fetchWithRetry(ctx, targetURL)
+	fallbackWrapper := f.createFallbackWrapper(targetURL)
+
+	result, err := fallbackWrapper.Execute(ctx, func() (any, error) {
+		return f.circuitBreaker.Execute(ctx, func() (any, error) {
+			return f.retry.Execute(ctx, "web-fetch", func() (any, error) {
+				content, fetchErr := f.performFetch(ctx, targetURL)
+				if fetchErr == nil && f.cache != nil {
+					f.cacheContent(ctx, targetURL, content)
+				}
+
+				return content, fetchErr
+			})
+		})
 	})
 
 	if err != nil {
 		if errors.Is(err, gobreaker.ErrOpenState) {
-			f.logger.Warn().Str("url", targetURL).Msg("Circuit breaker is open")
+			f.logger.Warn().Str("url", targetURL).Msg("circuit breaker is open")
+
 			return nil, domain.NewDomainError(
 				"CIRCUIT_BREAKER_OPEN",
-				"Service temporarily unavailable due to repeated failures",
-				503,
+				"service temporarily unavailable due to repeated failures",
+				http.StatusServiceUnavailable,
 				err,
 			)
 		}
-		return nil, err
+
+		return nil, fmt.Errorf("failed to execute the fallback wrapper: %w", err)
 	}
 
 	return result.(*domain.WebPageContent), nil
 }
 
-func (f *WebPageFetcher) fetchWithRetry(ctx context.Context, targetURL string) (*domain.WebPageContent, error) {
+func (f *WebFetcher) createFallbackWrapper(targetURL string) *resilience.FallbackWrapper {
+	if !f.config.Fallback.Enabled {
+		return resilience.NewFallbackWrapper(
+			resilience.FallbackConfig{
+				Name:     "web-fetcher-fallback",
+				Enabled:  false,
+				Fallback: nil,
+			},
+			f.logger,
+			f.metrics,
+		)
+	}
+
+	var fallbackStrategy resilience.FallbackStrategy
+
+	if f.config.Fallback.UseCache && f.cache != nil {
+		cacheFallback := resilience.NewCacheFallbackStrategy(targetURL, f.cache, f.logger)
+		if f.config.Fallback.UseStatic {
+			staticFallback := resilience.NewWebFetcherStaticFallbackStrategy(targetURL)
+			fallbackChain := resilience.NewFallbackChain(
+				func(ctx context.Context) (any, error) {
+					return cacheFallback.Execute(ctx)
+				},
+				f.logger,
+			)
+			fallbackChain.AddFallback(staticFallback)
+			fallbackStrategy = &fallbackChainAdapter{chain: fallbackChain}
+		} else {
+			fallbackStrategy = cacheFallback
+		}
+	} else if f.config.Fallback.UseStatic {
+		fallbackStrategy = resilience.NewWebFetcherStaticFallbackStrategy(targetURL)
+	}
+
+	return resilience.NewFallbackWrapper(
+		resilience.FallbackConfig{
+			Name:     "web-fetcher-fallback",
+			Enabled:  true,
+			Fallback: fallbackStrategy,
+		},
+		f.logger,
+		f.metrics,
+	)
+}
+
+func (f *WebFetcher) cacheContent(ctx context.Context, url string, content *domain.WebPageContent) {
+	cacheKey := fmt.Sprintf("webpage:%s", url)
+	contentJSON, err := json.Marshal(content)
+	if err != nil {
+		f.logger.Warn().
+			Err(err).
+			Str("url", url).
+			Msg("failed to marshal content for caching")
+
+		return
+	}
+
+	if err := f.cache.Set(ctx, cacheKey, contentJSON, 1*time.Hour); err != nil {
+		f.logger.Warn().
+			Err(err).
+			Str("url", url).
+			Msg("failed to cache content")
+	}
+}
+
+func (fca *fallbackChainAdapter) Execute(ctx context.Context) (any, error) {
+	return fca.chain.Execute(ctx)
+}
+
+func (f *WebFetcher) performFetch(ctx context.Context, targetURL string) (*domain.WebPageContent, error) {
 	startTime := time.Now()
 
 	resp, err := f.client.R().
 		SetContext(ctx).
 		Get(targetURL)
+
+	if err != nil {
+		f.logger.Error().
+			Err(err).
+			Str("url", targetURL).
+			Msg("failed to fetch URL")
+
+		return nil, domain.NewURLNotReachableError(targetURL, 0, err)
+	}
 
 	duration := time.Since(startTime)
 
@@ -129,16 +242,7 @@ func (f *WebPageFetcher) fetchWithRetry(ctx context.Context, targetURL string) (
 		Str("content_type", resp.Header().Get("Content-Type")).
 		Msg("HTTP request completed")
 
-	if err != nil {
-		f.logger.Error().
-			Str("url", targetURL).
-			Str("error", err.Error()).
-			Msg("Failed to fetch URL")
-
-		return nil, domain.NewURLNotReachableError(targetURL, 0, err)
-	}
-
-	if resp.StatusCode() < 200 || resp.StatusCode() >= 300 {
+	if resp.StatusCode() < http.StatusOK || resp.StatusCode() >= http.StatusMultipleChoices {
 		f.logger.Warn().
 			Str("url", targetURL).
 			Int("status_code", resp.StatusCode()).
@@ -156,8 +260,8 @@ func (f *WebPageFetcher) fetchWithRetry(ctx context.Context, targetURL string) (
 			"RESPONSE_TOO_LARGE",
 			fmt.Sprintf("Response size %d bytes exceeds maximum allowed %d bytes",
 				len(resp.Body()), f.config.MaxResponseSizeBytes),
-			413,
-			fmt.Errorf("response too large"),
+			http.StatusRequestEntityTooLarge,
+			fmt.Errorf("response is too large"),
 		)
 	}
 
@@ -177,17 +281,27 @@ func (f *WebPageFetcher) fetchWithRetry(ctx context.Context, targetURL string) (
 	}
 
 	return &domain.WebPageContent{
-		URL:         resp.Request.URL,
-		StatusCode:  resp.StatusCode(),
-		HTML:        string(resp.Body()),
-		ContentType: contentType,
-		Headers:     headers,
+		URL:           resp.Request.URL,
+		StatusCode:    resp.StatusCode(),
+		HTML:          string(resp.Body()),
+		ContentType:   contentType,
+		Headers:       headers,
+		FetchDuration: duration,
 	}, nil
 }
 
-func (f *WebPageFetcher) validateURL(targetURL string) error {
+func (f *WebFetcher) validateURL(targetURL string) error {
 	if targetURL == "" {
 		return fmt.Errorf("URL cannot be empty")
+	}
+
+	// Validate URL length constraints (matching OpenAPI spec)
+	if len(targetURL) < minInputSize {
+		return fmt.Errorf("URL must be at least %d characters long", minInputSize)
+	}
+
+	if len(targetURL) > maxInputSize {
+		return fmt.Errorf("URL must not exceed %d characters", maxInputSize)
 	}
 
 	parsedURL, err := url.Parse(targetURL)
@@ -236,27 +350,24 @@ func isPrivateOrLocalURL(host string) bool {
 		}
 	}
 
-	// Check for private IP ranges
-	if strings.HasPrefix(hostLower, "10.") ||
-		strings.HasPrefix(hostLower, "172.16.") ||
-		strings.HasPrefix(hostLower, "172.17.") ||
-		strings.HasPrefix(hostLower, "172.18.") ||
-		strings.HasPrefix(hostLower, "172.19.") ||
-		strings.HasPrefix(hostLower, "172.20.") ||
-		strings.HasPrefix(hostLower, "172.21.") ||
-		strings.HasPrefix(hostLower, "172.22.") ||
-		strings.HasPrefix(hostLower, "172.23.") ||
-		strings.HasPrefix(hostLower, "172.24.") ||
-		strings.HasPrefix(hostLower, "172.25.") ||
-		strings.HasPrefix(hostLower, "172.26.") ||
-		strings.HasPrefix(hostLower, "172.27.") ||
-		strings.HasPrefix(hostLower, "172.28.") ||
-		strings.HasPrefix(hostLower, "172.29.") ||
-		strings.HasPrefix(hostLower, "172.30.") ||
-		strings.HasPrefix(hostLower, "172.31.") ||
-		strings.HasPrefix(hostLower, "192.168.") {
-		return true
+	if i := strings.LastIndexByte(host, ':'); i != -1 {
+		host = host[:i] // strip port if present
 	}
 
-	return false
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+
+	ip = ip.To4()
+	if ip == nil {
+		return false
+	}
+
+	// 10.0.0.0/8
+	return ip[0] == 10 ||
+		// 172.16.0.0/12
+		(ip[0] == 172 && ip[1] >= 16 && ip[1] <= 31) ||
+		// 192.168.0.0/16
+		(ip[0] == 192 && ip[1] == 168)
 }

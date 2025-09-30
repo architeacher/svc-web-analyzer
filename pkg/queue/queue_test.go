@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
+	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 func TestRabbitMQQueue_Connect(t *testing.T) {
@@ -96,18 +96,18 @@ func TestMessage_Marshal(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		body     interface{}
-		wantErr  bool
+		name    string
+		body    any
+		wantErr bool
 	}{
 		{
-			name: "string body",
-			body: "test message",
+			name:    "string body",
+			body:    "test message",
 			wantErr: false,
 		},
 		{
 			name: "map body",
-			body: map[string]interface{}{
+			body: map[string]any{
 				"key": "value",
 				"num": 42,
 			},
@@ -125,8 +125,8 @@ func TestMessage_Marshal(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "nil body",
-			body: nil,
+			name:    "nil body",
+			body:    nil,
 			wantErr: false,
 		},
 	}
@@ -156,14 +156,14 @@ func TestMessage_Unmarshal(t *testing.T) {
 		Body: []byte(jsonData),
 	}
 
-	var bodyData map[string]interface{}
+	var bodyData map[string]any
 	json.Unmarshal([]byte(jsonData), &bodyData)
 	msg := Message{
-		Body: bodyData,
+		Body:         bodyData,
 		amqpDelivery: NewAmqpDeliveryAdapter(delivery),
 	}
 
-	var result map[string]interface{}
+	var result map[string]any
 	err := msg.Unmarshal(&result)
 
 	assert.NoError(t, err)
@@ -256,7 +256,7 @@ func TestMsgController_Requeue(t *testing.T) {
 	mockDelivery.On("GetHeaders").Return(amqp.Table{"x-retry-count": "1"})
 	mockDelivery.On("Ack", false).Return(nil)
 
-	msg := Message{Body: map[string]interface{}{"test": "data"}}
+	msg := Message{Body: map[string]any{"test": "data"}}
 	msg.amqpDelivery = mockDelivery
 
 	err := ctrl.Requeue(msg)

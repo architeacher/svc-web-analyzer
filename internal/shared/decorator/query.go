@@ -3,7 +3,7 @@ package decorator
 import (
 	"context"
 
-	"github.com/architeacher/svc-web-analyzer/internal/infrastructure"
+	appLogger "github.com/architeacher/svc-web-analyzer/pkg/logger"
 	otelTrace "go.opentelemetry.io/otel/trace"
 )
 
@@ -18,7 +18,7 @@ type (
 
 func ApplyQueryDecorators[Q Query, R Result](
 	handler QueryHandler[Q, R],
-	logger *infrastructure.Logger,
+	logger appLogger.Logger,
 	tracerProvider otelTrace.TracerProvider,
 	metricsClient MetricsClient,
 ) QueryHandler[Q, R] {

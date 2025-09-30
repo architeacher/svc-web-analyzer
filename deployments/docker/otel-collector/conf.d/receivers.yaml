@@ -1,0 +1,57 @@
+# Data sources: metrics
+hostmetrics:
+  collection_interval: 30s
+  initial_delay: 3s
+  scrapers:
+    cpu:
+    disk:
+    filesystem:
+    load:
+    memory:
+    network:
+    process:
+    processes:
+    paging:
+
+# Data sources: traces
+jaeger:
+  protocols:
+    grpc:
+      endpoint: "jaeger.nordaccount.local:4317"
+    thrift_binary:
+    thrift_compact:
+    thrift_http:
+
+# Data sources: traces, metrics, logs
+kafka:
+  protocol_version: 2.0.0
+
+# Data sources: traces
+otlp:
+  protocols:
+    grpc:
+      endpoint: "0.0.0.0:4317"
+    http:
+      endpoint: "0.0.0.0:4318"
+      cors:
+        allowed_origins:
+          - "http://*"
+          - "https://*"
+        max_age: 7200
+
+# Data sources: metrics
+prometheus:
+  config:
+    scrape_configs:
+      # Collect own metrics
+      - job_name: 'otel-collector-metrics'
+        scrape_interval: 10s
+        static_configs:
+          - targets: [ "0.0.0.0:8888" ]
+        metric_relabel_configs:
+          - source_labels: [ __name__ ]
+            regex: '.*grpc_io.*'
+            action: drop
+  start_time_metric_regex: .*
+  trim_metric_suffixes: true
+  use_start_time_metric: true

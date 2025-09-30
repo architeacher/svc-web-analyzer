@@ -1,0 +1,68 @@
+# Data sources: traces, metrics, logs
+# NOTE: Prior to v0.86.0 use `logging` instead of `debug`
+debug:
+  verbosity: detailed
+
+# Data sources: traces, metrics, logs
+file:
+  path: ./app.json
+  rotation:
+
+# Data sources: traces, metrics, logs
+kafka:
+  protocol_version: 2.0.0
+
+# Data sources: traces, metrics, logs
+otlp:
+  endpoint: "0.0.0.0:4317"
+  tls:
+    insecure: true
+
+# Data sources: traces
+otlp/jaeger:
+  endpoint: "jaeger:4317"
+  tls:
+    ca_file: "/etc/ssl/certs/rootCA.pem"
+    cert_file: "/etc/ssl/certs/ca-cert-star-web-analyzer-dev-crt.pem"
+    key_file: "/etc/ssl/certs/ca-cert-star-web-analyzer-dev-key.pem"
+
+# Data sources: traces, metrics
+otlphttp:
+  endpoint: "0.0.0.0:4318"
+  tls:
+    ca_file: "/etc/ssl/certs/rootCA.pem"
+    cert_file: "/etc/ssl/certs/ca-cert-star-web-analyzer-dev-crt.pem"
+    key_file: "/etc/ssl/certs/ca-cert-star-web-analyzer-dev-key.pem"
+
+# Data sources: metrics
+prometheus:
+  endpoint: "0.0.0.0:8889"
+  add_metric_suffixes: true
+  const_labels:
+    namespace: "web_analyzer"
+    "exported_by": "OTEL Collector"
+  enable_open_metrics: true
+  metric_expiration: 5m
+  namespace: na
+  resource_to_telemetry_conversion:
+    enabled: true
+  send_timestamps: true
+  tls:
+    ca_file: "/etc/ssl/certs/rootCA.pem"
+    cert_file: "/etc/ssl/certs/ca-cert-star-web-analyzer-dev-crt.pem"
+    key_file: "/etc/ssl/certs/ca-cert-star-web-analyzer-dev-key.pem"
+
+# Data sources: metrics
+prometheusremotewrite/prometheus:
+#  endpoint: https://grafana.nordaccount.local/loki/api/v1/push
+  # When using the official Prometheus (running via Docker)
+  # Prometheus server must have '--enable-feature=remote-write-receiver'
+  endpoint: "https://prometheus.nordaccount.local/api/v1/otlp/v1/metrics"
+  tls:
+    ca_file: "/etc/ssl/certs/rootCA.pem"
+    cert_file: "/etc/ssl/certs/ca-cert-star-web-analyzer-dev-crt.pem"
+    key_file: "/etc/ssl/certs/ca-cert-star-web-analyzer-dev-key.pem"
+
+# Data sources: traces
+zipkin:
+  endpoint: "http://zipkin.nordaccount.local:9411/api/v2/spans"

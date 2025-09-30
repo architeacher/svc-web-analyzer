@@ -4,9 +4,10 @@ import (
 	"context"
 
 	"github.com/architeacher/svc-web-analyzer/internal/domain"
-	"github.com/architeacher/svc-web-analyzer/internal/infrastructure"
 	"github.com/architeacher/svc-web-analyzer/internal/service"
 	"github.com/architeacher/svc-web-analyzer/internal/shared/decorator"
+	appLogger "github.com/architeacher/svc-web-analyzer/pkg/logger"
+	metricsKit "github.com/architeacher/svc-web-analyzer/pkg/metrics"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -21,9 +22,9 @@ type (
 )
 
 func NewFetchReadinessReportQueryHandler(appService service.ApplicationService,
-	logger *infrastructure.Logger,
+	logger appLogger.Logger,
 	tracerProvider trace.TracerProvider,
-	metricsClient decorator.MetricsClient,
+	metricsClient metricsKit.Client,
 ) decorator.QueryHandler[FetchReadinessReportQuery, *domain.ReadinessResult] {
 	return decorator.ApplyQueryDecorators[FetchReadinessReportQuery, *domain.ReadinessResult](
 		fetchReadinessReportQueryHandler{

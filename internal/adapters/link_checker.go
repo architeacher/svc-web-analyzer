@@ -3,50 +3,58 @@ package adapters
 import (
 	"context"
 	"errors"
+	"net/http"
 	"net/url"
 	"sync"
 	"time"
 
 	"github.com/architeacher/svc-web-analyzer/internal/config"
 	"github.com/architeacher/svc-web-analyzer/internal/domain"
-	"github.com/architeacher/svc-web-analyzer/internal/infrastructure"
+	"github.com/architeacher/svc-web-analyzer/internal/ports"
+	appLogger "github.com/architeacher/svc-web-analyzer/pkg/logger"
 	"github.com/go-resty/resty/v2"
 	"github.com/sony/gobreaker"
+	"go.opentelemetry.io/otel/attribute"
 )
 
-const (
-	defaultLinkCheckTimeout   = 10 * time.Second
-	maxConcurrentLinkChecks   = 10
-	maxLinksToCheck           = 100 // Prevent abuse
-	linkCheckRetries          = 2
-	linkCheckRetryWaitTime    = 500 * time.Millisecond
-	linkCheckMaxRetryWaitTime = 2 * time.Second
+const linkTypeKey = "link.type"
+
+type (
+	LinkChecker struct {
+		client         *resty.Client
+		circuitBreaker *gobreaker.CircuitBreaker
+		config         config.LinkCheckerConfig
+		logger         appLogger.Logger
+		metricsClient  ports.MetricsClient
+	}
+
+	linkCheckResult struct {
+		StatusCode int
+		Error      string
+	}
 )
 
-type LinkChecker struct {
-	client         *resty.Client
-	circuitBreaker *gobreaker.CircuitBreaker
-	logger         *infrastructure.Logger
-	config         config.LinkCheckerConfig
-}
-
-func NewLinkChecker(config config.LinkCheckerConfig, logger *infrastructure.Logger) *LinkChecker {
+func NewLinkChecker(
+	config config.LinkCheckerConfig,
+	logger appLogger.Logger,
+	metricsClient ports.MetricsClient,
+) *LinkChecker {
 	client := resty.New()
 
-	client.SetTimeout(config.Timeout)
-	client.SetRetryCount(config.Retries)
-	client.SetRetryWaitTime(config.RetryWaitTime)
-	client.SetRetryMaxWaitTime(config.MaxRetryWaitTime)
-	client.SetRedirectPolicy(resty.FlexibleRedirectPolicy(5)) // Limit redirects for link checking
+	client.SetTimeout(config.Timeout).
+		SetRetryCount(int(config.Retries)).
+		SetRetryWaitTime(config.RetryWaitTime).
+		SetRetryMaxWaitTime(config.MaxRetryWaitTime).
+		SetRedirectPolicy(resty.FlexibleRedirectPolicy(5)) // Limit redirects for link checking
 
 	client.SetHeaders(map[string]string{
-		"User-Agent": "WebPageAnalyzer-WebCrawler/1.0",
+		"User-Agent": "WebAnalyzer-WebCrawler/1.0",
 		"Accept":     "*/*",
 	})
 
 	cbSettings := gobreaker.Settings{
 		Name:        "link-checker",
-		MaxRequests: config.CircuitBreaker.MaxRequests,
+		MaxRequests: uint32(config.CircuitBreaker.MaxRequests),
 		Interval:    config.CircuitBreaker.Interval,
 		Timeout:     config.CircuitBreaker.Timeout,
 		ReadyToTrip: func(counts gobreaker.Counts) bool {
@@ -69,6 +77,7 @@ func NewLinkChecker(config config.LinkCheckerConfig, logger *infrastructure.Logg
 		circuitBreaker: circuitBreaker,
 		logger:         logger,
 		config:         config,
+		metricsClient:  metricsClient,
 	}
 }
 
@@ -79,10 +88,10 @@ func (lc *LinkChecker) CheckAccessibility(ctx context.Context, links []domain.Li
 
 	// Filter to only external links and limit the number
 	externalLinks := lc.filterExternalLinks(links)
-	if len(externalLinks) > lc.config.MaxLinksToCheck {
+	if len(externalLinks) > int(lc.config.MaxLinksToCheck) {
 		lc.logger.Warn().
 			Int("total_links", len(externalLinks)).
-			Int("max_links", lc.config.MaxLinksToCheck).
+			Uint("max_links", lc.config.MaxLinksToCheck).
 			Msg("Too many links to check, limiting to maximum allowed")
 		externalLinks = externalLinks[:lc.config.MaxLinksToCheck]
 	}
@@ -93,7 +102,7 @@ func (lc *LinkChecker) CheckAccessibility(ctx context.Context, links []domain.Li
 		Int("links_to_check", len(externalLinks)).
 		Msg("Starting link accessibility check")
 
-	inaccessibleLinks := lc.checkLinksWithConcurrency(ctx, externalLinks)
+	inaccessibleLinks := lc.checkLinks(ctx, externalLinks)
 
 	lc.logger.Info().
 		Int("total_checked", len(externalLinks)).
@@ -108,18 +117,12 @@ func (lc *LinkChecker) filterExternalLinks(links []domain.Link) []domain.Link {
 	seen := make(map[string]bool)
 
 	for _, link := range links {
-		// Skip internal links and duplicates
-		if link.Type == domain.LinkTypeInternal {
+		if link.Type == domain.LinkTypeInternal || seen[link.URL] {
 			continue
 		}
 
-		// Skip if we've already seen this URL
-		if seen[link.URL] {
-			continue
-		}
 		seen[link.URL] = true
 
-		// Skip invalid URLs
 		if _, err := url.Parse(link.URL); err != nil {
 			continue
 		}
@@ -130,7 +133,7 @@ func (lc *LinkChecker) filterExternalLinks(links []domain.Link) []domain.Link {
 	return externalLinks
 }
 
-func (lc *LinkChecker) checkLinksWithConcurrency(ctx context.Context, links []domain.Link) []domain.InaccessibleLink {
+func (lc *LinkChecker) checkLinks(ctx context.Context, links []domain.Link) []domain.InaccessibleLink {
 	var inaccessibleLinks []domain.InaccessibleLink
 	var mu sync.Mutex
 
@@ -138,10 +141,7 @@ func (lc *LinkChecker) checkLinksWithConcurrency(ctx context.Context, links []do
 	var wg sync.WaitGroup
 
 	for _, link := range links {
-		wg.Add(1)
-		go func(link domain.Link) {
-			defer wg.Done()
-
+		wg.Go(func() {
 			semaphore <- struct{}{}        // Acquire semaphore
 			defer func() { <-semaphore }() // Release semaphore
 
@@ -150,17 +150,18 @@ func (lc *LinkChecker) checkLinksWithConcurrency(ctx context.Context, links []do
 				inaccessibleLinks = append(inaccessibleLinks, *inaccessibleLink)
 				mu.Unlock()
 			}
-		}(link)
+		})
 	}
 
 	wg.Wait()
+
 	return inaccessibleLinks
 }
 
 func (lc *LinkChecker) checkSingleLink(ctx context.Context, link domain.Link) *domain.InaccessibleLink {
 	startTime := time.Now()
 
-	result, err := lc.circuitBreaker.Execute(func() (interface{}, error) {
+	result, err := lc.circuitBreaker.Execute(func() (any, error) {
 		return lc.performLinkCheck(ctx, link.URL)
 	})
 
@@ -168,15 +169,17 @@ func (lc *LinkChecker) checkSingleLink(ctx context.Context, link domain.Link) *d
 
 	if err != nil {
 		lc.logger.Debug().
+			Err(err).
 			Str("url", link.URL).
-			Str("error", err.Error()).
 			Int64("duration_ms", duration.Milliseconds()).
 			Msg("Link check failed")
+
+		lc.recordLinkCheck(ctx, false, string(link.Type))
 
 		if errors.Is(err, gobreaker.ErrOpenState) {
 			return &domain.InaccessibleLink{
 				URL:        link.URL,
-				StatusCode: 503,
+				StatusCode: http.StatusServiceUnavailable,
 				Error:      "Service temporarily unavailable (circuit breaker open)",
 			}
 		}
@@ -194,22 +197,21 @@ func (lc *LinkChecker) checkSingleLink(ctx context.Context, link domain.Link) *d
 		Str("url", link.URL).
 		Int("status_code", checkResult.StatusCode).
 		Int64("duration_ms", duration.Milliseconds()).
-		Msg("Link check completed")
+		Msg("link check completed")
 
-	if checkResult.StatusCode >= 400 {
+	if checkResult.StatusCode >= http.StatusBadRequest {
+		lc.recordLinkCheck(ctx, false, string(link.Type))
+
 		return &domain.InaccessibleLink{
 			URL:        link.URL,
-			StatusCode: checkResult.StatusCode,
+			StatusCode: uint(checkResult.StatusCode),
 			Error:      checkResult.Error,
 		}
 	}
 
-	return nil
-}
+	lc.recordLinkCheck(ctx, true, string(link.Type))
 
-type linkCheckResult struct {
-	StatusCode int
-	Error      string
+	return nil
 }
 
 func (lc *LinkChecker) performLinkCheck(ctx context.Context, linkURL string) (*linkCheckResult, error) {
@@ -219,7 +221,7 @@ func (lc *LinkChecker) performLinkCheck(ctx context.Context, linkURL string) (*l
 		Head(linkURL)
 
 	if err != nil {
-		// If HEAD fails, try GET request
+		// If HEAD fails, try the GET request
 		resp, err = lc.client.R().
 			SetContext(ctx).
 			Get(linkURL)
@@ -232,9 +234,18 @@ func (lc *LinkChecker) performLinkCheck(ctx context.Context, linkURL string) (*l
 		StatusCode: resp.StatusCode(),
 	}
 
-	if resp.StatusCode() >= 400 {
+	if resp.StatusCode() >= http.StatusBadRequest {
 		result.Error = resp.Status()
 	}
 
 	return result, nil
+}
+
+func (lc *LinkChecker) recordLinkCheck(ctx context.Context, success bool, linkType string) {
+	attr := attribute.String(linkTypeKey, linkType)
+	lc.metricsClient.Inc(ctx, ports.LinkCheckTotal, int64(1), attr)
+
+	if !success {
+		lc.metricsClient.Inc(ctx, ports.LinkCheckErrorTotal, int64(1), attr)
+	}
 }

@@ -1,0 +1,64 @@
+# Data sources: traces
+attributes:
+  actions:
+    - key: environment
+      value: local
+      action: insert
+    - key: db.statement
+      action: delete
+    - key: email
+      action: hash
+
+# Data sources: traces, metrics, logs
+batch:
+  send_batch_size: 1024
+  send_batch_max_size: 2048
+  timeout: 10s
+
+# Data sources: metrics
+filter:
+  error_mode: ignore
+  metrics:
+    include:
+      match_type: regexp
+      metric_names:
+        - prefix/.*
+        - prefix_.*
+
+# Data sources: traces, metrics, logs
+memory_limiter:
+  check_interval: 1s
+  limit_mib: 512
+  spike_limit_mib: 128
+
+# Data sources: traces
+resource:
+  attributes:
+    - key: service.namespace
+      value: svc-web-analyzer
+      action: upsert
+    - key: deployment.environment
+      value: development
+      action: upsert
+    - key: cloud.zone
+      value: zone-1
+      action: upsert
+    - key: k8s.cluster.name
+      from_attribute: k8s-cluster
+      action: insert
+    - key: redundant-attribute
+      action: delete
+
+# Data sources: traces
+probabilistic_sampler:
+  hash_seed: 22
+  sampling_percentage: 15
+
+# Data sources: traces
+span:
+  name:
+    to_attributes:
+      rules:
+        - ^\/api\/v1\/document\/(?P<documentId>.*)\/update$
+    from_attributes: [db.svc, operation]
+    separator: '::'

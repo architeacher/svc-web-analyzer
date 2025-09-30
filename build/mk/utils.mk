@@ -9,6 +9,9 @@ define printMessage
     printf "${2}$(MSG_PRFX) %s$(MSG_SFX)${NO_CLR}\n" ${1} 2>&1
 endef
 
+$(ARTIFACTS_DIR):
+	if [ ! -d $(ARTIFACTS_DIR) ] ; then mkdir -p $(ARTIFACTS_DIR) 2>&1 ; fi
+
 .PHONY: help
 help: ## to get help about the targets.
 	$(call displayProjectLogo,$(OK_CLR)) 2>&1
@@ -29,3 +32,28 @@ list: ## to list all targets.
 	awk -F':' '/^[a-z0-9][^$#\/\t=]*:([^=]|$$)/ {split($$1,A,/ /); \
 		for(i in A)printf "$(LIST_CLR)%-30s${NO_CLR}\n", A[i]}' \
 		$(MAKEFILE_LIST) | sort -u 2>&1
+
+.PHONY: stats
+stats: ## to output source statistics.
+	$(call printMessage,"📊 Calculating source statistics",$(INFO_CLR))
+	tokei --exclude=node_modules,vendor . 2>&1
+
+.PHONY: todo
+todo: $(ARTIFACTS_DIR) ## to output to-do items per file.
+	$(call printMessage,"🔎️  Searching for todos",$(INFO_CLR))
+	todos="$$(todoPrefix="TODO"; \
+		grep \
+		--color \
+		--exclude-dir=.artifacts \
+		--exclude-dir=.git \
+		--exclude-dir=assets \
+		--exclude-dir=vendor \
+		--exclude-dir=node_modules \
+		--text \
+		-inRo \
+		" $${todoPrefix}:.*" . )" ; \
+	if [ -n "$${todos}" ]; then \
+		echo "${ITEM_CLR}$${todos}${NO_CLR}"; \
+		echo "$${todos}" > "${ARTIFACTS_DIR}/TODOs.txt"; \
+	fi
+

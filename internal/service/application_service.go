@@ -6,11 +6,20 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
+	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/architeacher/svc-web-analyzer/internal/config"
 	"github.com/architeacher/svc-web-analyzer/internal/domain"
-	"github.com/architeacher/svc-web-analyzer/internal/infrastructure"
 	"github.com/architeacher/svc-web-analyzer/internal/ports"
+	appLogger "github.com/architeacher/svc-web-analyzer/pkg/logger"
+)
+
+const (
+	statusKey     = "status"
+	statusSuccess = "success"
+	statusError   = "error"
+	errorTypeKey  = "error.type"
 )
 
 type (
@@ -23,82 +32,86 @@ type (
 		FetchHealthReport(ctx context.Context) (*domain.HealthResult, error)
 	}
 
-	analysisService struct {
+	appService struct {
 		analysisRepo  ports.AnalysisRepository
-		cacheRepo     ports.CacheRepository
 		outboxRepo    ports.OutboxRepository
+		cacheRepo     ports.CacheRepository
 		healthChecker ports.HealthChecker
-		storageClient *infrastructure.Storage
+		db            *sqlx.DB
 		sseConfig     config.SSEConfig
-		logger        *infrastructure.Logger
+		outboxConfig  config.OutboxConfig
+		logger        appLogger.Logger
+		metricsClient ports.MetricsClient
 	}
 )
 
 func NewApplicationService(
 	analysisRepo ports.AnalysisRepository,
-	cacheRepo ports.CacheRepository,
 	outboxRepo ports.OutboxRepository,
+	cacheRepo ports.CacheRepository,
 	healthChecker ports.HealthChecker,
-	storageClient *infrastructure.Storage,
+	db *sqlx.DB,
 	sseConfig config.SSEConfig,
-	logger *infrastructure.Logger,
+	outboxConfig config.OutboxConfig,
+	logger appLogger.Logger,
+	metricsClient ports.MetricsClient,
 ) ApplicationService {
-	return analysisService{
+	return &appService{
 		analysisRepo:  analysisRepo,
-		cacheRepo:     cacheRepo,
 		outboxRepo:    outboxRepo,
+		cacheRepo:     cacheRepo,
 		healthChecker: healthChecker,
-		storageClient: storageClient,
+		db:            db,
 		sseConfig:     sseConfig,
+		outboxConfig:  outboxConfig,
 		logger:        logger,
+		metricsClient: metricsClient,
 	}
 }
 
-func (s analysisService) StartAnalysis(ctx context.Context, url string, options domain.AnalysisOptions) (*domain.Analysis, error) {
-	if s.storageClient == nil {
-		return nil, fmt.Errorf("failed to get database connection: storage client not initialized")
-	}
-
-	db, err := s.storageClient.GetDB()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get database connection: %w", err)
-	}
-
-	tx, err := db.BeginTx(ctx, nil)
+func (s *appService) StartAnalysis(ctx context.Context, url string, options domain.AnalysisOptions) (*domain.Analysis, error) {
+	tx, err := s.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
 
-	analysis, err := s.analysisRepo.SaveInTx(tx, url, options)
+	defer func() {
+		if rollbackErr := tx.Rollback(); rollbackErr != nil {
+			s.logger.Error().Err(rollbackErr).Msg("failed to rollback transaction")
+		}
+	}()
+
+	analysis, err := s.analysisRepo.SaveInTx(ctx, tx, url, options)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save analysis: %w", err)
 	}
 
+	priority := domain.PriorityNormal
+	maxRetries := s.outboxConfig.GetMaxRetriesForPriority(string(priority))
+
 	outboxEvent := &domain.OutboxEvent{
-		ID:            uuid.New(),
+		ID:            uuid.Nil,
 		AggregateID:   analysis.ID,
 		AggregateType: "analysis",
 		EventType:     domain.OutboxEventAnalysisRequested,
-		Priority:      domain.PriorityNormal,
+		Priority:      priority,
 		RetryCount:    0,
-		MaxRetries:    3,
+		MaxRetries:    maxRetries,
 		Status:        domain.OutboxStatusPending,
 		Payload: domain.AnalysisRequestPayload{
 			AnalysisID: analysis.ID,
 			URL:        url,
 			Options:    options,
-			Priority:   domain.PriorityNormal,
+			Priority:   priority,
 			CreatedAt:  analysis.CreatedAt,
 		},
 		CreatedAt: analysis.CreatedAt,
 	}
 
-	if err := s.outboxRepo.SaveInTx(tx, outboxEvent); err != nil {
+	if err := s.outboxRepo.SaveInTx(ctx, tx, outboxEvent); err != nil {
 		return nil, fmt.Errorf("failed to save outbox event: %w", err)
 	}
 
-	// Commit transaction - ensures atomicity of analysis + outbox event
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
@@ -113,11 +126,12 @@ func (s analysisService) StartAnalysis(ctx context.Context, url string, options 
 		Str("url", url).
 		Str("outbox_event_id", outboxEvent.ID.String()).
 		Msg("Successfully created analysis and outbox event")
+	s.recordAnalysisRequest(ctx, time.Since(analysis.CreatedAt), true, "")
 
 	return analysis, nil
 }
 
-func (s analysisService) FetchAnalysis(ctx context.Context, analysisID string) (*domain.Analysis, error) {
+func (s *appService) FetchAnalysis(ctx context.Context, analysisID string) (*domain.Analysis, error) {
 	analysis, err := s.cacheRepo.Find(ctx, analysisID)
 	if err == nil {
 		return analysis, nil
@@ -135,23 +149,23 @@ func (s analysisService) FetchAnalysis(ctx context.Context, analysisID string) (
 	return analysis, nil
 }
 
-func (s analysisService) FetchAnalysisEvents(ctx context.Context, analysisID string) (<-chan domain.AnalysisEvent, error) {
+func (s *appService) FetchAnalysisEvents(ctx context.Context, analysisID string) (<-chan domain.AnalysisEvent, error) {
 	events := make(chan domain.AnalysisEvent, 10)
+	checkAnalysisChan := make(chan struct{}, 1)
 
 	go func() {
 		defer close(events)
+		defer close(checkAnalysisChan)
 
-		analysis, err := s.FetchAnalysis(ctx, analysisID)
-		if err != nil {
-			return
-		}
+		keepAliveTicker := time.NewTicker(s.sseConfig.HeartbeatInterval)
+		eventsTicker := time.NewTicker(s.sseConfig.EventsInterval)
+		defer func() {
+			keepAliveTicker.Stop()
+			eventsTicker.Stop()
+		}()
 
-		if !s.sendAnalysisEvent(analysis, events) {
-			return
-		}
-
-		keepAliveTicker := time.NewTicker(s.sseConfig.EventsInterval)
-		defer keepAliveTicker.Stop()
+		// Send the initial event if it has been processed and don't wait for the ticker.
+		checkAnalysisChan <- struct{}{}
 
 		for {
 			select {
@@ -160,12 +174,31 @@ func (s analysisService) FetchAnalysisEvents(ctx context.Context, analysisID str
 
 				return
 			case <-keepAliveTicker.C:
+				const eventType = "heartbeat"
+				s.sendHeartbeatEvent(eventType, map[string]any{}, events)
+
+			case <-eventsTicker.C:
+				checkAnalysisChan <- struct{}{}
+
+			case <-checkAnalysisChan:
 				analysis, err := s.FetchAnalysis(ctx, analysisID)
 				if err != nil {
+					s.logger.Error().
+						Err(err).
+						Str("analysis_id", analysisID).
+						Msg("failed to fetch analysis")
+
 					return
 				}
 
-				if !s.sendAnalysisEvent(analysis, events) {
+				eventType := s.getEventStatus(analysis.Status)
+				if !s.shouldWait(s.getEventStatus(analysis.Status)) {
+					// Analysis completed, give the client more time to receive the event.
+					const parsingDuration = 500 * time.Millisecond
+
+					<-time.After(parsingDuration)
+					s.sendAnalysisEvent(eventType, analysis, events)
+
 					return
 				}
 			}
@@ -175,42 +208,81 @@ func (s analysisService) FetchAnalysisEvents(ctx context.Context, analysisID str
 	return events, nil
 }
 
-func (s analysisService) sendAnalysisEvent(analysis *domain.Analysis, events chan<- domain.AnalysisEvent) bool {
+func (s *appService) FetchReadinessReport(ctx context.Context) (*domain.ReadinessResult, error) {
+	return s.healthChecker.CheckReadiness(ctx), nil
+}
+
+func (s *appService) FetchLivenessReport(ctx context.Context) (*domain.LivenessResult, error) {
+	return s.healthChecker.CheckLiveness(ctx), nil
+}
+
+func (s *appService) FetchHealthReport(ctx context.Context) (*domain.HealthResult, error) {
+	return s.healthChecker.CheckHealth(ctx), nil
+}
+
+func (s *appService) shouldWait(eventType domain.Event) bool {
+	return eventType != domain.EventTypeCompleted && eventType != domain.EventTypeFailed
+}
+
+func (s *appService) sendAnalysisEvent(
+	eventType domain.Event,
+	analysis *domain.Analysis,
+	events chan<- domain.AnalysisEvent,
+) {
+	events <- domain.AnalysisEvent{
+		Type:    eventType,
+		Payload: analysis,
+		EventID: analysis.ID.String(),
+	}
+}
+
+func (s *appService) sendHeartbeatEvent(
+	eventType domain.Event,
+	payload any,
+	events chan<- domain.AnalysisEvent,
+) {
+	events <- domain.AnalysisEvent{
+		Type:    eventType,
+		Payload: payload,
+	}
+}
+
+func (s *appService) getEventStatus(status domain.AnalysisStatus) domain.Event {
 	analysisStatusEventsMap := map[domain.AnalysisStatus]domain.Event{
 		domain.StatusRequested:  domain.EventTypeStarted,
 		domain.StatusInProgress: domain.EventTypeProgress,
 		domain.StatusCompleted:  domain.EventTypeCompleted,
 		domain.StatusFailed:     domain.EventTypeFailed,
 	}
-	keepWaiting := true
 
-	switch analysis.Status {
-	case domain.StatusCompleted, domain.StatusFailed:
-		keepWaiting = false
-	}
-
-	eventType, ok := analysisStatusEventsMap[analysis.Status]
-	if !ok {
-		keepWaiting = false
-	}
-
-	events <- domain.AnalysisEvent{
-		Type:    eventType,
-		Data:    analysis,
-		EventID: analysis.ID.String(),
-	}
-
-	return keepWaiting
+	return analysisStatusEventsMap[status]
 }
 
-func (s analysisService) FetchReadinessReport(ctx context.Context) (*domain.ReadinessResult, error) {
-	return s.healthChecker.CheckReadiness(ctx), nil
-}
+func (s *appService) recordAnalysisRequest(ctx context.Context, duration time.Duration, success bool, errorType string) {
+	status := statusSuccess
+	if !success {
+		status = statusError
+	}
 
-func (s analysisService) FetchLivenessReport(ctx context.Context) (*domain.LivenessResult, error) {
-	return s.healthChecker.CheckLiveness(ctx), nil
-}
+	s.metricsClient.Inc(
+		ctx,
+		ports.AnalysisRequestTotal,
+		int64(1),
+		attribute.String(statusKey, status),
+	)
+	s.metricsClient.Inc(
+		ctx,
+		ports.AnalysisRequestDuration,
+		duration.Seconds(),
+		attribute.String(statusKey, status),
+	)
 
-func (s analysisService) FetchHealthReport(ctx context.Context) (*domain.HealthResult, error) {
-	return s.healthChecker.CheckHealth(ctx), nil
+	if !success && errorType != "" {
+		s.metricsClient.Inc(
+			ctx,
+			ports.AnalysisErrorTotal,
+			int64(1),
+			attribute.String(errorTypeKey, errorType),
+		)
+	}
 }

@@ -1,37 +1,37 @@
 package runtime
 
 import (
-	"context"
 	"os"
-
-	"github.com/architeacher/svc-web-analyzer/internal/config"
-	"github.com/architeacher/svc-web-analyzer/internal/infrastructure"
 )
 
-type Option func(client *ServiceCtx)
+type (
+	ServiceOption func(*ServiceCtx)
 
-type TracerShutdownFunc func(ctx context.Context) error
+	PublisherOption func(*PublisherCtx)
 
-func WithLogger(logger *infrastructure.Logger) Option {
-	return func(sCtx *ServiceCtx) {
-		sCtx.deps.logger = logger
+	SubscriberOption func(*SubscriberCtx)
+)
+
+func WithServiceTermination(ch chan os.Signal) ServiceOption {
+	return func(ctx *ServiceCtx) {
+		ctx.shutdownChannel = ch
 	}
 }
 
-func WithConfig(cfg *config.ServiceConfig) Option {
-	return func(sCtx *ServiceCtx) {
-		sCtx.deps.cfg = cfg
+func WithPublisherTermination(ch chan os.Signal) PublisherOption {
+	return func(ctx *PublisherCtx) {
+		ctx.shutdownChannel = ch
 	}
 }
 
-func WithServiceTermination(ch chan os.Signal) Option {
-	return func(sCtx *ServiceCtx) {
-		sCtx.shutdownChannel = ch
+func WithSubscriberTermination(ch chan os.Signal) SubscriberOption {
+	return func(ctx *SubscriberCtx) {
+		ctx.shutdownChannel = ch
 	}
 }
 
-func WithWaitingForServer() Option {
-	return func(sCtx *ServiceCtx) {
-		sCtx.serverReady = make(chan struct{})
+func WithWaitingForServer() ServiceOption {
+	return func(ctx *ServiceCtx) {
+		ctx.serverReady = make(chan struct{})
 	}
 }

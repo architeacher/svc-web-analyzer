@@ -1,0 +1,11 @@
+receivers: ${file:/etc/otel/conf.d/receivers.yaml}
+
+processors: ${file:/etc/otel/conf.d/processors.yaml}
+
+exporters: ${file:/etc/otel/conf.d/exporters.yaml}
+
+connectors: ${file:/etc/otel/conf.d/connectors.yaml}
+
+extensions: ${file:/etc/otel/conf.d/extensions.yaml}
+
+service: ${file:/etc/otel/conf.d/service.yaml}

@@ -12,20 +12,16 @@ import (
 
 // Queue represents the main queue interface for publishing and consuming messages
 type Queue interface {
-	// Publisher operations
-	Publish(ctx context.Context, exchange, routingKey string, payload interface{}) error
-	PublishWithOptions(ctx context.Context, exchange, routingKey string, payload interface{}, opts ...publisherOption) error
+	Publish(ctx context.Context, exchange, routingKey string, payload any) error
+	PublishWithOptions(ctx context.Context, exchange, routingKey string, payload any, opts ...publisherOption) error
 
-	// Consumer operations
 	Consume(ctx context.Context, queue, consumer string, handler MessageHandler, opts ...consumerOption) error
 	StartConsumer(ctx context.Context, queue, consumer string, handler MessageHandler, opts ...consumerOption) (<-chan error, error)
 
-	// Infrastructure operations
 	DeclareExchange(name, kind string, durable, autoDelete bool) error
 	DeclareQueue(name string, durable, autoDelete bool) (amqp.Queue, error)
 	BindQueue(queueName, routingKey, exchangeName string) error
 
-	// Connection management
 	Connect() error
 	Close() error
 	IsConnected() bool
@@ -152,12 +148,12 @@ func (q *RabbitMQQueue) BindQueue(queueName, routingKey, exchangeName string) er
 }
 
 // Publish publishes a message to an exchange with default options
-func (q *RabbitMQQueue) Publish(ctx context.Context, exchange, routingKey string, payload interface{}) error {
+func (q *RabbitMQQueue) Publish(ctx context.Context, exchange, routingKey string, payload any) error {
 	return q.PublishWithOptions(ctx, exchange, routingKey, payload)
 }
 
 // PublishWithOptions publishes a message to an exchange with custom options
-func (q *RabbitMQQueue) PublishWithOptions(ctx context.Context, exchange, routingKey string, payload interface{}, opts ...publisherOption) error {
+func (q *RabbitMQQueue) PublishWithOptions(ctx context.Context, exchange, routingKey string, payload any, opts ...publisherOption) error {
 	if !q.IsConnected() {
 		return fmt.Errorf("not connected to RabbitMQ")
 	}

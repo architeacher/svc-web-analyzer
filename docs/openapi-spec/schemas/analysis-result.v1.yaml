@@ -10,6 +10,15 @@ AnalysisResult:
     status:
       type: string
       enum: [completed]
+    content_hash:
+      type: string
+      description: SHA-256 hash of the analyzed content
+      example: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    content_size:
+      type: integer
+      format: int64
+      description: Size of the analyzed content in bytes
+      example: 1234
     created_at:
       type: string
       format: date-time

@@ -7,8 +7,8 @@ LivenessResponse:
   properties:
     status:
       type: string
-      enum: [OK, DOWN, MAINTENANCE]
-      description: Service liveness status
+      enum: [OK, DEGRADED, DOWN, MAINTENANCE]
+      description: Service liveness status - OK if service is running, DEGRADED if running with reduced capacity
     timestamp:
       type: string
       format: date-time

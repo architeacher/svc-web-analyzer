@@ -26,7 +26,11 @@ const (
 	exporterTypeStdOut = "stdout"
 )
 
-func InitGlobalTracer(ctx context.Context, cfgTelemetry config.Telemetry, cfgApp config.AppConfig) (shutdown func(context.Context) error, err error) {
+func InitGlobalTracer(
+	ctx context.Context,
+	cfgTelemetry config.Telemetry,
+	cfgApp config.AppConfig,
+) (func(context.Context) error, error) {
 	propagator := propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{},
 		propagation.Baggage{},

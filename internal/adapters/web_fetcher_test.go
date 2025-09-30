@@ -7,33 +7,33 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/architeacher/svc-web-analyzer/internal/config"
 	"github.com/architeacher/svc-web-analyzer/internal/domain"
-	"github.com/architeacher/svc-web-analyzer/internal/infrastructure"
-	"github.com/rs/zerolog"
+	"github.com/architeacher/svc-web-analyzer/internal/mocks"
+	appLogger "github.com/architeacher/svc-web-analyzer/pkg/logger"
 	"github.com/sony/gobreaker"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 )
 
 // WebFetcherTestSuite implements a custom test suite pattern for web fetcher tests
-type WebFetcherTestSuite struct {
-	fetcher    *TestWebPageFetcher
-	logger     *infrastructure.Logger
-	config     config.WebFetcherConfig
-	testServer *httptest.Server
-	t          *testing.T
-}
+type (
+	WebFetcherTestSuite struct {
+		suite.Suite
+		fetcher    *TestWebPageFetcher
+		logger     appLogger.Logger
+		config     config.WebFetcherConfig
+		testServer *httptest.Server
+	}
 
-// TestWebPageFetcher is a test version of WebPageFetcher that doesn't block local URLs
-type TestWebPageFetcher struct {
-	*WebPageFetcher
-}
+	// TestWebPageFetcher is a test version of WebFetcher that doesn't block local URLs.
+	TestWebPageFetcher struct {
+		*WebFetcher
+	}
+)
 
 // Fetch overrides the normal Fetch to use the test validation
 func (f *TestWebPageFetcher) Fetch(ctx context.Context, targetURL string, timeout time.Duration) (*domain.WebPageContent, error) {
@@ -45,13 +45,16 @@ func (f *TestWebPageFetcher) Fetch(ctx context.Context, targetURL string, timeou
 		f.client.SetTimeout(timeout)
 	}
 
-	result, err := f.circuitBreaker.Execute(func() (interface{}, error) {
-		return f.fetchWithRetry(ctx, targetURL)
+	result, err := f.circuitBreaker.Execute(ctx, func() (any, error) {
+		return f.retry.Execute(ctx, "web-fetch", func() (any, error) {
+			return f.performFetch(ctx, targetURL)
+		})
 	})
 
 	if err != nil {
 		if errors.Is(err, gobreaker.ErrOpenState) {
-			f.logger.Warn().Str("url", targetURL).Msg("Circuit breaker is open")
+			f.logger.Warn().Str("url", targetURL).Msg("circuit breaker is open")
+
 			return nil, domain.NewDomainError(
 				"CIRCUIT_BREAKER_OPEN",
 				"Service temporarily unavailable due to repeated failures",
@@ -59,6 +62,7 @@ func (f *TestWebPageFetcher) Fetch(ctx context.Context, targetURL string, timeou
 				err,
 			)
 		}
+
 		return nil, err
 	}
 
@@ -93,17 +97,14 @@ func (f *TestWebPageFetcher) validateURL(targetURL string) error {
 }
 
 // newWebFetcherTestSuite creates a new test suite instance
-func newWebFetcherTestSuite(t *testing.T) *WebFetcherTestSuite {
-	nopLogger := zerolog.Nop()
-	logger := &infrastructure.Logger{Logger: &nopLogger}
-
+func newWebFetcherTestSuite() *WebFetcherTestSuite {
 	cfg := config.WebFetcherConfig{
 		MaxRetries:           3,
 		RetryWaitTime:        100 * time.Millisecond,
 		MaxRetryWaitTime:     1 * time.Second,
 		MaxRedirects:         10,
 		MaxResponseSizeBytes: 10 * 1024 * 1024, // 10MB
-		UserAgent:            "WebPageAnalyzer/1.0",
+		UserAgent:            "WebAnalyzer/1.0",
 		CircuitBreaker: config.CircuitBreakerConfig{
 			MaxRequests: 3,
 			Interval:    10 * time.Second,
@@ -112,16 +113,15 @@ func newWebFetcherTestSuite(t *testing.T) *WebFetcherTestSuite {
 	}
 
 	return &WebFetcherTestSuite{
-		logger: logger,
+		logger: appLogger.NewTestLogger(),
 		config: cfg,
-		t:      t,
 	}
 }
 
 // SetupTest sets up resources before each test
 func (suite *WebFetcherTestSuite) SetupTest() {
-	baseFetcher := NewWebPageFetcher(suite.config, suite.logger)
-	suite.fetcher = &TestWebPageFetcher{WebPageFetcher: baseFetcher}
+	baseFetcher := NewWebFetcher(suite.config, nil, suite.logger, new(mocks.FakeMetricsClient))
+	suite.fetcher = &TestWebPageFetcher{WebFetcher: baseFetcher}
 }
 
 // TearDownTest cleans up resources after each test
@@ -132,7 +132,7 @@ func (suite *WebFetcherTestSuite) TearDownTest() {
 	}
 }
 
-// createTestServer creates a test HTTP server with custom handler
+// createTestServer creates a test HTTP server with a custom handler
 func (suite *WebFetcherTestSuite) createTestServer(handler http.HandlerFunc) {
 	suite.testServer = httptest.NewServer(handler)
 }
@@ -190,7 +190,7 @@ func WithDelay(delay time.Duration) ServerOption {
 	}
 }
 
-// WithResponseSize generates a response of specified size (useful for testing large responses)
+// WithResponseSize generates a response of a specified size (useful for testing large responses)
 func WithResponseSize(size int) ServerOption {
 	return func(config *serverConfig) {
 		config.ResponseSize = size
@@ -199,33 +199,27 @@ func WithResponseSize(size int) ServerOption {
 
 // createSimpleServer creates a server with functional options configuration
 func (suite *WebFetcherTestSuite) createSimpleServer(options ...ServerOption) *httptest.Server {
-	// Apply default configuration
 	config := &serverConfig{
 		StatusCode: http.StatusOK,
 	}
 
-	// Apply all options
 	for _, option := range options {
 		option(config)
 	}
 
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Add delay if specified
 		if config.Delay > 0 {
 			time.Sleep(config.Delay)
 		}
 
-		// Middleware content type
 		if config.ContentType != "" {
 			w.Header().Set("Content-Type", config.ContentType)
 		}
 
-		// Middleware custom headers
 		for key, value := range config.Headers {
 			w.Header().Set(key, value)
 		}
 
-		// Middleware status code
 		w.WriteHeader(config.StatusCode)
 
 		// Write response body
@@ -258,11 +252,11 @@ func (suite *WebFetcherTestSuite) createRedirectServer(targetURL string, statusC
 
 // TestNewWebPageFetcher tests the constructor
 func (suite *WebFetcherTestSuite) TestNewWebPageFetcher() {
-	require.NotNil(suite.t, suite.fetcher)
-	require.NotNil(suite.t, suite.fetcher.client)
-	require.NotNil(suite.t, suite.fetcher.circuitBreaker)
-	require.NotNil(suite.t, suite.fetcher.logger)
-	assert.Equal(suite.t, suite.config, suite.fetcher.config)
+	suite.Require().NotNil(suite.fetcher)
+	suite.Require().NotNil(suite.fetcher.client)
+	suite.Require().NotNil(suite.fetcher.circuitBreaker)
+	suite.Require().NotNil(suite.fetcher.logger)
+	suite.Require().Equal(suite.config, suite.fetcher.config)
 }
 
 // TestFetch_SuccessfulRequest tests successful HTTP requests
@@ -307,11 +301,11 @@ func (suite *WebFetcherTestSuite) TestFetch_SuccessfulRequest() {
 	}
 
 	for _, tc := range cases {
-		suite.t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
+		suite.Run(tc.name, func() {
+			suite.T().Parallel()
 
-			// Create test server for this specific test using helper method
-			subSuite := newWebFetcherTestSuite(t)
+			// Create a test server for this specific test using a helper method.
+			subSuite := newWebFetcherTestSuite()
 			server := subSuite.createSimpleServer(
 				WithStatusCode(tc.responseCode),
 				WithContentType(tc.contentType),
@@ -320,26 +314,26 @@ func (suite *WebFetcherTestSuite) TestFetch_SuccessfulRequest() {
 			)
 			defer server.Close()
 
-			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(suite.T().Context(), 5*time.Second)
 			defer cancel()
 
 			// Create a fresh suite for each sub-test
-			subSuite = newWebFetcherTestSuite(t)
+			subSuite = newWebFetcherTestSuite()
 			subSuite.SetupTest()
 			defer subSuite.TearDownTest()
 
 			result, err := subSuite.fetcher.Fetch(ctx, server.URL, 0)
 
-			require.NoError(t, err)
-			require.NotNil(t, result)
-			assert.Equal(t, tc.expectedStatus, result.StatusCode)
-			assert.Equal(t, tc.responseBody, result.HTML)
-			assert.Equal(t, tc.contentType, result.ContentType)
-			assert.Equal(t, server.URL, result.URL)
+			suite.Require().NoError(err)
+			suite.Require().NotNil(result)
+			suite.Require().Equal(tc.expectedStatus, result.StatusCode)
+			suite.Require().Equal(tc.responseBody, result.HTML)
+			suite.Require().Equal(tc.contentType, result.ContentType)
+			suite.Require().Equal(server.URL, result.URL)
 
 			// Check custom headers
 			for key, expectedValue := range tc.customHeaders {
-				assert.Equal(t, expectedValue, result.Headers[key])
+				suite.Require().Equal(expectedValue, result.Headers[key])
 			}
 		})
 	}
@@ -358,7 +352,7 @@ func (suite *WebFetcherTestSuite) TestFetch_ErrorCases() {
 		{
 			name: "HTTP 404 Not Found",
 			setupServer: func() *httptest.Server {
-				subSuite := newWebFetcherTestSuite(nil)
+				subSuite := newWebFetcherTestSuite()
 				return subSuite.createSimpleServer(
 					WithStatusCode(http.StatusNotFound),
 					WithResponseBody("Not Found"),
@@ -370,7 +364,7 @@ func (suite *WebFetcherTestSuite) TestFetch_ErrorCases() {
 		{
 			name: "HTTP 500 Internal Server Error",
 			setupServer: func() *httptest.Server {
-				subSuite := newWebFetcherTestSuite(nil)
+				subSuite := newWebFetcherTestSuite()
 				return subSuite.createSimpleServer(
 					WithStatusCode(http.StatusInternalServerError),
 					WithResponseBody("Internal Server Error"),
@@ -382,7 +376,7 @@ func (suite *WebFetcherTestSuite) TestFetch_ErrorCases() {
 		{
 			name: "Response too large",
 			setupServer: func() *httptest.Server {
-				subSuite := newWebFetcherTestSuite(nil)
+				subSuite := newWebFetcherTestSuite()
 				return subSuite.createSimpleServer(
 					WithStatusCode(http.StatusOK),
 					WithContentType("text/html"),
@@ -395,7 +389,7 @@ func (suite *WebFetcherTestSuite) TestFetch_ErrorCases() {
 		{
 			name: "Context timeout",
 			setupServer: func() *httptest.Server {
-				subSuite := newWebFetcherTestSuite(nil)
+				subSuite := newWebFetcherTestSuite()
 				return subSuite.createSimpleServer(
 					WithStatusCode(http.StatusOK),
 					WithContentType("text/html"),
@@ -410,11 +404,11 @@ func (suite *WebFetcherTestSuite) TestFetch_ErrorCases() {
 	}
 
 	for _, tc := range cases {
-		suite.t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
+		suite.Run(tc.name, func() {
+			suite.T().Parallel()
 
-			// Create a fresh fetcher for each sub-test to avoid circuit breaker interference
-			subSuite := newWebFetcherTestSuite(t)
+			// Create a fresh fetcher for each subtest to avoid circuit breaker interference
+			subSuite := newWebFetcherTestSuite()
 			subSuite.SetupTest()
 			defer subSuite.TearDownTest()
 
@@ -427,7 +421,7 @@ func (suite *WebFetcherTestSuite) TestFetch_ErrorCases() {
 				testURL = tc.url
 			}
 
-			ctx := t.Context()
+			ctx := suite.T().Context()
 			if tc.timeout > 0 {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithTimeout(ctx, tc.timeout)
@@ -436,13 +430,13 @@ func (suite *WebFetcherTestSuite) TestFetch_ErrorCases() {
 
 			result, err := subSuite.fetcher.Fetch(ctx, testURL, tc.timeout)
 
-			require.Nil(t, result)
-			require.Error(t, err)
+			suite.Require().Nil(result)
+			suite.Require().Error(err)
 
 			var domainErr *domain.DomainError
-			require.True(t, errors.As(err, &domainErr), "Expected domain error, got %T", err)
-			assert.Equal(t, tc.expectedCode, domainErr.Code)
-			assert.Regexp(t, tc.expectedErrMsg, domainErr.Message)
+			suite.Require().True(errors.As(err, &domainErr), "Expected domain error, got %T", err)
+			suite.Require().Equal(tc.expectedCode, domainErr.Code)
+			suite.Require().Regexp(tc.expectedErrMsg, domainErr.Message)
 		})
 	}
 }
@@ -520,52 +514,75 @@ func (suite *WebFetcherTestSuite) TestFetch_InvalidURLs() {
 			expectedCode:   "INVALID_URL",
 			useRealFetcher: true, // Use real fetcher to test actual validation
 		},
+		{
+			name:           "URL too short (2 chars)",
+			url:            "ab",
+			expectedErrMsg: "Invalid URL: ab",
+			expectedCode:   "INVALID_URL",
+			useRealFetcher: true, // Use real fetcher to test actual validation
+		},
+		{
+			name:           "URL exactly at minimum length (3 chars)",
+			url:            "a.b",
+			expectedErrMsg: "Invalid URL: a.b",
+			expectedCode:   "INVALID_URL",
+			useRealFetcher: true, // Use real fetcher to test actual validation (will fail on the other validation)
+		},
+		{
+			name:           "URL too long (>10000 chars)",
+			url:            "https://example.com/" + strings.Repeat("a", 10000),
+			expectedErrMsg: "Invalid URL: https://example.com/" + strings.Repeat("a", 10000),
+			expectedCode:   "INVALID_URL",
+			useRealFetcher: true, // Use real fetcher to test actual validation
+		},
 	}
 
 	for _, tc := range cases {
-		suite.t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
+		suite.Run(tc.name, func() {
+			suite.T().Parallel()
 
-			ctx, cancel := context.WithTimeout(t.Context(), 1*time.Second)
+			ctx, cancel := context.WithTimeout(suite.T().Context(), time.Second)
 			defer cancel()
 
 			var result *domain.WebPageContent
 			var err error
 
 			if tc.useRealFetcher {
-				// Use real fetcher for validation tests
-				nopLogger := zerolog.Nop()
-				logger := &infrastructure.Logger{Logger: &nopLogger}
 				cfg := config.WebFetcherConfig{
 					MaxRetries:           3,
 					RetryWaitTime:        100 * time.Millisecond,
-					MaxRetryWaitTime:     1 * time.Second,
+					MaxRetryWaitTime:     time.Second,
 					MaxRedirects:         10,
 					MaxResponseSizeBytes: 10 * 1024 * 1024,
-					UserAgent:            "WebPageAnalyzer/1.0",
+					UserAgent:            "WebAnalyzer/1.0",
 					CircuitBreaker: config.CircuitBreakerConfig{
 						MaxRequests: 3,
 						Interval:    10 * time.Second,
 						Timeout:     60 * time.Second,
 					},
 				}
-				realFetcher := NewWebPageFetcher(cfg, logger)
+				realFetcher := NewWebFetcher(
+					cfg,
+					nil,
+					appLogger.NewTestLogger(),
+					new(mocks.FakeMetricsClient),
+				)
 				result, err = realFetcher.Fetch(ctx, tc.url, 0)
 			} else {
 				// Use TestWebPageFetcher for other tests
-				subSuite := newWebFetcherTestSuite(t)
+				subSuite := newWebFetcherTestSuite()
 				subSuite.SetupTest()
 				defer subSuite.TearDownTest()
 				result, err = subSuite.fetcher.Fetch(ctx, tc.url, 0)
 			}
 
-			require.Nil(t, result)
-			require.Error(t, err)
+			suite.Require().Nil(result)
+			suite.Require().Error(err)
 
 			var domainErr *domain.DomainError
-			require.True(t, errors.As(err, &domainErr), "Expected domain error, got %T", err)
-			assert.Equal(t, tc.expectedCode, domainErr.Code)
-			assert.Equal(t, tc.expectedErrMsg, domainErr.Message)
+			suite.Require().True(errors.As(err, &domainErr), "Expected domain error, got %T", err)
+			suite.Require().Equal(tc.expectedCode, domainErr.Code)
+			suite.Require().Equal(tc.expectedErrMsg, domainErr.Message)
 		})
 	}
 }
@@ -584,27 +601,27 @@ func (suite *WebFetcherTestSuite) TestFetch_CircuitBreaker() {
 	)
 	defer server.Close()
 
-	ctx := suite.t.Context()
+	ctx := suite.T().Context()
 
-	// First few requests should fail and trigger circuit breaker
+	// The first few requests should fail and trigger the circuit breaker
 	for i := 0; i < 4; i++ {
 		result, err := suite.fetcher.Fetch(ctx, server.URL, 0)
-		require.Nil(suite.t, result)
-		require.Error(suite.t, err)
+		suite.Require().Nil(result)
+		suite.Require().Error(err)
 	}
 
-	// Wait a bit for circuit breaker to open
+	// Wait a bit for the circuit breaker to open
 	time.Sleep(150 * time.Millisecond)
 
-	// Next request should fail with circuit breaker open error
+	// The next request should fail with a circuit breaker open error
 	result, err := suite.fetcher.Fetch(ctx, server.URL, 0)
-	require.Nil(suite.t, result)
-	require.Error(suite.t, err)
+	suite.Require().Nil(result)
+	suite.Require().Error(err)
 
 	var domainErr *domain.DomainError
-	require.True(suite.t, errors.As(err, &domainErr), "Expected domain error with CIRCUIT_BREAKER_OPEN, got %T", err)
-	assert.Equal(suite.t, "CIRCUIT_BREAKER_OPEN", domainErr.Code)
-	assert.Contains(suite.t, domainErr.Message, "Service temporarily unavailable")
+	suite.Require().True(errors.As(err, &domainErr), "Expected domain error with CIRCUIT_BREAKER_OPEN, got %T", err)
+	suite.Require().Equal("CIRCUIT_BREAKER_OPEN", domainErr.Code)
+	suite.Require().Contains(domainErr.Message, "Service temporarily unavailable")
 }
 
 // TestFetch_TimeoutSettings tests timeout configuration
@@ -636,10 +653,10 @@ func (suite *WebFetcherTestSuite) TestFetch_TimeoutSettings() {
 	}
 
 	for _, tc := range cases {
-		suite.t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
+		suite.Run(tc.name, func() {
+			suite.T().Parallel()
 
-			subSuite := newWebFetcherTestSuite(t)
+			subSuite := newWebFetcherTestSuite()
 			server := subSuite.createSimpleServer(
 				WithStatusCode(http.StatusOK),
 				WithContentType("text/html"),
@@ -648,23 +665,23 @@ func (suite *WebFetcherTestSuite) TestFetch_TimeoutSettings() {
 			)
 			defer server.Close()
 
-			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(suite.T().Context(), 5*time.Second)
 			defer cancel()
 
 			// Create a fresh fetcher for each sub-test to avoid issues
-			subSuite = newWebFetcherTestSuite(t)
+			subSuite = newWebFetcherTestSuite()
 			subSuite.SetupTest()
 			defer subSuite.TearDownTest()
 
 			result, err := subSuite.fetcher.Fetch(ctx, server.URL, tc.timeout)
 
 			if tc.shouldFail {
-				require.Nil(t, result)
-				require.Error(t, err)
+				suite.Require().Nil(result)
+				suite.Require().Error(err)
 			} else {
-				require.NotNil(t, result)
-				require.NoError(t, err)
-				assert.Equal(t, http.StatusOK, result.StatusCode)
+				suite.Require().NotNil(result)
+				suite.Require().NoError(err)
+				suite.Require().Equal(http.StatusOK, result.StatusCode)
 			}
 		})
 	}
@@ -683,32 +700,32 @@ func (suite *WebFetcherTestSuite) TestFetch_Redirects() {
 	redirectServer := suite.createRedirectServer(finalServer.URL, http.StatusFound)
 	defer redirectServer.Close()
 
-	ctx, cancel := context.WithTimeout(suite.t.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(suite.T().Context(), 5*time.Second)
 	defer cancel()
 
 	result, err := suite.fetcher.Fetch(ctx, redirectServer.URL, 0)
 
-	require.NoError(suite.t, err)
-	require.NotNil(suite.t, result)
-	assert.Equal(suite.t, http.StatusOK, result.StatusCode)
-	assert.Contains(suite.t, result.HTML, "Final destination")
+	suite.Require().NoError(err)
+	suite.Require().NotNil(result)
+	suite.Require().Equal(http.StatusOK, result.StatusCode)
+	suite.Require().Contains(result.HTML, "Final destination")
 
 	// Parse both URLs to compare without dynamic port numbers
 	expectedURL, err := url.Parse(finalServer.URL)
-	require.NoError(suite.t, err)
+	suite.Require().NoError(err)
 	actualURL, err := url.Parse(result.URL)
-	require.NoError(suite.t, err)
+	suite.Require().NoError(err)
 
 	// Verify the final URL is the expected final server URL
 	// Compare scheme, hostname, and path, but not port since ports are dynamic
-	assert.Equal(suite.t, expectedURL.Scheme, actualURL.Scheme)
-	assert.Equal(suite.t, expectedURL.Hostname(), actualURL.Hostname())
-	assert.Equal(suite.t, expectedURL.Path, actualURL.Path)
+	suite.Require().Equal(expectedURL.Scheme, actualURL.Scheme)
+	suite.Require().Equal(expectedURL.Hostname(), actualURL.Hostname())
+	suite.Require().Equal(expectedURL.Path, actualURL.Path)
 
 	// Verify that both URLs actually point to the same test server
 	// by checking that they both use localhost/127.0.0.1
-	assert.Equal(suite.t, "127.0.0.1", actualURL.Hostname())
-	assert.Equal(suite.t, "127.0.0.1", expectedURL.Hostname())
+	suite.Require().Equal("127.0.0.1", actualURL.Hostname())
+	suite.Require().Equal("127.0.0.1", expectedURL.Hostname())
 }
 
 // TestValidateURL tests URL validation logic separately
@@ -793,19 +810,22 @@ func (suite *WebFetcherTestSuite) TestValidateURL() {
 	}
 
 	for _, tc := range cases {
-		suite.t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			// Create a real fetcher to test actual validation logic
-			nopLogger := zerolog.Nop()
-			logger := &infrastructure.Logger{Logger: &nopLogger}
-			realFetcher := NewWebPageFetcher(config.WebFetcherConfig{}, logger)
+		suite.Run(tc.name, func() {
+			suite.T().Parallel()
+
+			realFetcher := NewWebFetcher(
+				config.WebFetcherConfig{},
+				nil,
+				appLogger.NewTestLogger(),
+				new(mocks.FakeMetricsClient),
+			)
 
 			err := realFetcher.validateURL(tc.url)
 			if tc.wantErr {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tc.errMsg)
+				suite.Require().Error(err)
+				suite.Require().Contains(err.Error(), tc.errMsg)
 			} else {
-				require.NoError(t, err)
+				suite.Require().NoError(err)
 			}
 		})
 	}
@@ -871,10 +891,10 @@ func (suite *WebFetcherTestSuite) TestIsHTMLContent() {
 	}
 
 	for _, tc := range cases {
-		suite.t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
+		suite.Run(tc.name, func() {
+			suite.T().Parallel()
 			result := isHTMLContent(tc.contentType)
-			assert.Equal(t, tc.expected, result)
+			suite.Require().Equal(tc.expected, result)
 		})
 	}
 }
@@ -969,10 +989,11 @@ func (suite *WebFetcherTestSuite) TestIsPrivateOrLocalURL() {
 	}
 
 	for _, tc := range cases {
-		suite.t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
+		suite.Run(tc.name, func() {
+			suite.T().Parallel()
+
 			result := isPrivateOrLocalURL(tc.host)
-			assert.Equal(t, tc.expected, result)
+			suite.Require().Equal(tc.expected, result)
 		})
 	}
 }
@@ -988,7 +1009,7 @@ func (suite *WebFetcherTestSuite) TestFetch_EdgeCases() {
 		{
 			name: "Empty response body",
 			setupServer: func() *httptest.Server {
-				subSuite := newWebFetcherTestSuite(nil)
+				subSuite := newWebFetcherTestSuite()
 				return subSuite.createSimpleServer(
 					WithStatusCode(http.StatusOK),
 					WithContentType("text/html; charset=utf-8"),
@@ -1000,7 +1021,7 @@ func (suite *WebFetcherTestSuite) TestFetch_EdgeCases() {
 		{
 			name: "Response with only whitespace",
 			setupServer: func() *httptest.Server {
-				subSuite := newWebFetcherTestSuite(nil)
+				subSuite := newWebFetcherTestSuite()
 				return subSuite.createSimpleServer(
 					WithStatusCode(http.StatusOK),
 					WithContentType("text/html; charset=utf-8"),
@@ -1012,7 +1033,7 @@ func (suite *WebFetcherTestSuite) TestFetch_EdgeCases() {
 		{
 			name: "Response exactly at size limit",
 			setupServer: func() *httptest.Server {
-				subSuite := newWebFetcherTestSuite(nil)
+				subSuite := newWebFetcherTestSuite()
 				return subSuite.createSimpleServer(
 					WithStatusCode(http.StatusOK),
 					WithContentType("text/html"),
@@ -1024,7 +1045,7 @@ func (suite *WebFetcherTestSuite) TestFetch_EdgeCases() {
 		{
 			name: "Missing Content-Type header",
 			setupServer: func() *httptest.Server {
-				subSuite := newWebFetcherTestSuite(nil)
+				subSuite := newWebFetcherTestSuite()
 				// No Content-Type header set
 				return subSuite.createSimpleServer(
 					WithStatusCode(http.StatusOK),
@@ -1036,34 +1057,34 @@ func (suite *WebFetcherTestSuite) TestFetch_EdgeCases() {
 	}
 
 	for _, tc := range cases {
-		suite.t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
+		suite.Run(tc.name, func() {
+			suite.T().Parallel()
 
 			server := tc.setupServer()
 			defer server.Close()
 
-			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(suite.T().Context(), 5*time.Second)
 			defer cancel()
 
 			// Create a fresh fetcher for each sub-test to avoid issues
-			subSuite := newWebFetcherTestSuite(t)
+			subSuite := newWebFetcherTestSuite()
 			subSuite.SetupTest()
 			defer subSuite.TearDownTest()
 
 			result, err := subSuite.fetcher.Fetch(ctx, server.URL, 0)
 
 			if tc.expectedErr {
-				require.Nil(t, result)
-				require.Error(t, err)
+				suite.Require().Nil(result)
+				suite.Require().Error(err)
 				if tc.expectedCode != "" {
 					var domainErr *domain.DomainError
-					require.True(t, errors.As(err, &domainErr), "Expected domain error, got %T", err)
-					assert.Equal(t, tc.expectedCode, domainErr.Code)
+					suite.Require().True(errors.As(err, &domainErr), "Expected domain error, got %T", err)
+					suite.Require().Equal(tc.expectedCode, domainErr.Code)
 				}
 			} else {
-				require.NotNil(t, result)
-				require.NoError(t, err)
-				assert.Equal(t, http.StatusOK, result.StatusCode)
+				suite.Require().NotNil(result)
+				suite.Require().NoError(err)
+				suite.Require().Equal(http.StatusOK, result.StatusCode)
 			}
 		})
 	}
@@ -1086,11 +1107,11 @@ func (suite *WebFetcherTestSuite) TestFetch_ConcurrentRequests() {
 	for i := 0; i < numRequests; i++ {
 		go func(id int) {
 			// Create a fresh fetcher for each goroutine to avoid race conditions
-			subSuite := newWebFetcherTestSuite(suite.t)
+			subSuite := newWebFetcherTestSuite()
 			subSuite.SetupTest()
 			defer subSuite.TearDownTest()
 
-			ctx, cancel := context.WithTimeout(suite.t.Context(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(suite.T().Context(), 5*time.Second)
 			defer cancel()
 
 			result, err := subSuite.fetcher.Fetch(ctx, server.URL, 0)
@@ -1111,45 +1132,13 @@ func (suite *WebFetcherTestSuite) TestFetch_ConcurrentRequests() {
 	// Collect results
 	for i := 0; i < numRequests; i++ {
 		err := <-results
-		require.NoError(suite.t, err, "Request %d failed", i)
-	}
-}
-
-// Custom test suite runner that discovers and executes all test methods
-func runWebFetcherSuite(t *testing.T, suite *WebFetcherTestSuite) {
-	// Use reflection to find all methods starting with "Test"
-	suiteType := reflect.TypeOf(suite)
-
-	var testMethods []reflect.Method
-	for i := 0; i < suiteType.NumMethod(); i++ {
-		method := suiteType.Method(i)
-		if strings.HasPrefix(method.Name, "Test") {
-			testMethods = append(testMethods, method)
-		}
-	}
-
-	// Run each test method as a subtest
-	for _, method := range testMethods {
-		t.Run(method.Name, func(t *testing.T) {
-			t.Parallel()
-
-			// Create a fresh suite instance for each test
-			testSuite := newWebFetcherTestSuite(t)
-			testSuite.SetupTest()
-			defer testSuite.TearDownTest()
-
-			// Call the test method
-			methodValue := reflect.ValueOf(testSuite).MethodByName(method.Name)
-			if methodValue.IsValid() {
-				methodValue.Call([]reflect.Value{})
-			}
-		})
+		suite.Require().NoError(err, "Request %d failed", i)
 	}
 }
 
 // TestWebFetcherSuite is the main test entry point that runs all test methods
 func TestWebFetcherSuite(t *testing.T) {
-	suite := newWebFetcherTestSuite(t)
+	t.Parallel()
 
-	runWebFetcherSuite(t, suite)
+	suite.Run(t, newWebFetcherTestSuite())
 }
