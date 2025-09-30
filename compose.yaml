@@ -94,7 +94,7 @@ services:
       test: [ "CMD-SHELL", "curl -f http://localhost:${HTTP_SERVER_PORT}/v1/readiness" ]
       interval: 10s
       retries: 5
-      start_period: 1s
+      start_period: 10s
       timeout: 1s
     command: [ "sh", "-c", "air -c /etc/air/.svc.toml" ]
 
@@ -103,6 +103,12 @@ services:
     ports:
       - "${WEB_ANALYZER_PUBLISHER_DEBUG_PORT:-50003}:50003"
     command: [ "sh", "-c", "air -c /etc/air/.publisher.toml" ]
+    healthcheck:
+      test: [ "CMD-SHELL", "pgrep -f publisher || exit 1" ]
+      interval: 10s
+      retries: 5
+      start_period: 10s
+      timeout: 5s
     deploy:
       replicas: 1
 
@@ -111,6 +117,12 @@ services:
     ports:
       - "${WEB_ANALYZER_SUBSCRIBER_DEBUG_PORT:-50005}:50005"
     command: [ "sh", "-c", "air -c /etc/air/.subscriber.toml" ]
+    healthcheck:
+      test: [ "CMD-SHELL", "pgrep -f subscriber || exit 1" ]
+      interval: 10s
+      retries: 5
+      start_period: 10s
+      timeout: 5s
     deploy:
       replicas: 1
 
@@ -175,7 +187,7 @@ services:
       - "./migrations:/migrations"
     command: [
       "-path", "/migrations",
-      "-database", "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable",
+      "-database", "postgres://${POSTGRES_USERNAME}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DATABASE}?sslmode=disable",
       "up"
     ]
     depends_on:
@@ -199,7 +211,7 @@ services:
     volumes:
       - postgres-storage:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USERNAME} -d ${POSTGRES_DATABASE}"]
       interval: 10s
       retries: 5
       start_period: 30s
@@ -278,6 +290,36 @@ services:
       - "traefik.http.routers.swagger-ui.entrypoints=websecure"
       - "traefik.http.routers.swagger-ui.tls=true"
     restart: unless-stopped
+    logging:
+      <<: *default-logging
+
+  web-app:
+    container_name: "svc-web-analyzer-web"
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    networks:
+      - internal
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.web.loadbalancer.server.port=8080"
+      - "traefik.http.routers.web.rule=Host(`web-analyzer.dev`)"
+      - "traefik.http.routers.web.entrypoints=websecure"
+      - "traefik.http.routers.web.tls=true"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    depends_on:
+      backend-app:
+        condition: service_healthy
+      publisher:
+        condition: service_healthy
+      subscriber:
+        condition: service_healthy
     logging:
       <<: *default-logging
 

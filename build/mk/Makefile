@@ -58,6 +58,14 @@ start: ## 🐳 Start the Docker containers.
 		-d \
         --force-recreate
 
+.PHONY: restart
+restart: ## 🐳 Restart the Docker containers.
+	$(call printMessage,"♻️  Restarting containers",$(INFO_CLR))
+	docker compose \
+		--profile development \
+		-f compose.yaml \
+		restart
+
 .PHONY: destroy
 destroy: ## 🐳 Destroy Docker containers.
 	$(call printMessage,"💣  Destroying containers",$(INFO_CLR))

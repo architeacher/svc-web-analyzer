@@ -7,50 +7,69 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/architeacher/svc-web-analyzer/internal/config"
 	"github.com/architeacher/svc-web-analyzer/internal/domain"
 )
 
 // Unit tests for the outbox repository that don't require database connections
 // Integration tests are in the itest package and use testcontainers
 
-func TestCalculateNextRetryTime(t *testing.T) {
+func TestCalculateBackoffDuration(t *testing.T) {
 	t.Parallel()
 
-	baseDelay := 5 * time.Second
-	now := time.Now()
-
 	tests := []struct {
-		name       string
-		retryCount int
-		baseDelay  time.Duration
-		maxDelay   time.Duration
+		name          string
+		retryCount    int
+		backoffConfig config.BackoffConfig
+		minExpected   time.Duration
+		maxExpected   time.Duration
 	}{
-		{"First retry", 0, baseDelay, 5 * time.Second},
-		{"Second retry", 1, baseDelay, 10 * time.Second},
-		{"Third retry", 2, baseDelay, 20 * time.Second},
-		{"High retry count should be capped", 10, baseDelay, 30 * time.Minute},
+		{
+			name:       "First retry",
+			retryCount: 0,
+			backoffConfig: config.BackoffConfig{
+				BaseDelay:  1 * time.Second,
+				Multiplier: 2.0,
+				Jitter:     0.2,
+				MaxDelay:   10 * time.Second,
+			},
+			minExpected: 800 * time.Millisecond,  // 1s - 20% jitter
+			maxExpected: 1200 * time.Millisecond, // 1s + 20% jitter
+		},
+		{
+			name:       "Second retry",
+			retryCount: 1,
+			backoffConfig: config.BackoffConfig{
+				BaseDelay:  1 * time.Second,
+				Multiplier: 2.0,
+				Jitter:     0.2,
+				MaxDelay:   10 * time.Second,
+			},
+			minExpected: 1600 * time.Millisecond, // 2s - 20% jitter
+			maxExpected: 2400 * time.Millisecond, // 2s + 20% jitter
+		},
+		{
+			name:       "High retry count should be capped",
+			retryCount: 10,
+			backoffConfig: config.BackoffConfig{
+				BaseDelay:  1 * time.Second,
+				Multiplier: 2.0,
+				Jitter:     0.2,
+				MaxDelay:   10 * time.Second,
+			},
+			minExpected: 8 * time.Second,  // 10s - 20% jitter
+			maxExpected: 12 * time.Second, // 10s + 20% jitter
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			nextRetryTime := CalculateNextRetryTime(tt.retryCount, tt.baseDelay)
+			duration := CalculateBackoffDuration(tt.retryCount, tt.backoffConfig)
 
-			// Should be in the future
-			assert.True(t, nextRetryTime.After(now))
-
-			// Should be within reasonable bounds (considering jitter)
-			expectedDelay := tt.maxDelay
-			if tt.retryCount < 10 { // Before hitting the max delay cap
-				expectedDelay = tt.baseDelay * time.Duration(1<<tt.retryCount)
-			}
-
-			minExpected := now.Add(expectedDelay)
-			maxExpected := now.Add(expectedDelay + 1*time.Second + 100*time.Millisecond) // jitter + buffer
-
-			assert.True(t, nextRetryTime.After(minExpected.Add(-100*time.Millisecond))) // Small buffer for test timing
-			assert.True(t, nextRetryTime.Before(maxExpected))
+			assert.GreaterOrEqual(t, duration, tt.minExpected)
+			assert.LessOrEqual(t, duration, tt.maxExpected)
 		})
 	}
 }
@@ -72,9 +91,9 @@ func TestOutboxEventValidation(t *testing.T) {
 				EventType:     domain.OutboxEventAnalysisRequested,
 				Priority:      domain.PriorityNormal,
 				Status:        domain.OutboxStatusPending,
-				Payload: map[string]interface{}{
+				Payload: map[string]any{
 					"analysis_id": uuid.New().String(),
-					"url":        "https://example.com",
+					"url":         "https://example.com",
 				},
 				CreatedAt: time.Now(),
 			},
@@ -89,7 +108,7 @@ func TestOutboxEventValidation(t *testing.T) {
 				EventType:     domain.OutboxEventAnalysisRequested,
 				Priority:      domain.PriorityNormal,
 				Status:        domain.OutboxStatusPending,
-				Payload:       map[string]interface{}{},
+				Payload:       map[string]any{},
 				CreatedAt:     time.Now(),
 			},
 			wantErr: false, // Empty payload is valid for some event types
@@ -114,9 +133,9 @@ func TestEventStatusTransitions(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name           string
-		currentStatus  domain.OutboxStatus
-		targetStatus   domain.OutboxStatus
+		name            string
+		currentStatus   domain.OutboxStatus
+		targetStatus    domain.OutboxStatus
 		validTransition bool
 	}{
 		{"pending to processing", domain.OutboxStatusPending, domain.OutboxStatusProcessing, true},
@@ -173,10 +192,10 @@ func TestRetryCountValidation(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name         string
-		retryCount   int
-		maxRetries   int
-		shouldRetry  bool
+		name        string
+		retryCount  int
+		maxRetries  int
+		shouldRetry bool
 	}{
 		{"first attempt", 0, 3, true},
 		{"second attempt", 1, 3, true},
@@ -200,20 +219,20 @@ func TestJSONPayloadHandling(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		payload map[string]interface{}
+		payload map[string]any
 		valid   bool
 	}{
 		{
 			name: "simple payload",
-			payload: map[string]interface{}{
+			payload: map[string]any{
 				"key": "value",
 			},
 			valid: true,
 		},
 		{
 			name: "nested payload",
-			payload: map[string]interface{}{
-				"nested": map[string]interface{}{
+			payload: map[string]any{
+				"nested": map[string]any{
 					"inner": "value",
 				},
 			},
@@ -221,7 +240,7 @@ func TestJSONPayloadHandling(t *testing.T) {
 		},
 		{
 			name:    "empty payload",
-			payload: map[string]interface{}{},
+			payload: map[string]any{},
 			valid:   true,
 		},
 		{

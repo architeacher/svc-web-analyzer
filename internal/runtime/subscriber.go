@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -26,6 +25,7 @@ import (
 
 type AnalysisWorker struct {
 	analysisRepo  ports.AnalysisRepository
+	outboxRepo    ports.OutboxRepository
 	cacheRepo     ports.CacheRepository
 	webFetcher    ports.WebPageFetcher
 	htmlAnalyzer  domain.HTMLAnalyzer
@@ -36,6 +36,7 @@ type AnalysisWorker struct {
 
 func NewAnalysisWorker(
 	analysisRepo ports.AnalysisRepository,
+	outboxRepo ports.OutboxRepository,
 	cacheRepo ports.CacheRepository,
 	webFetcher ports.WebPageFetcher,
 	htmlAnalyzer domain.HTMLAnalyzer,
@@ -45,6 +46,7 @@ func NewAnalysisWorker(
 ) *AnalysisWorker {
 	return &AnalysisWorker{
 		analysisRepo:  analysisRepo,
+		outboxRepo:    outboxRepo,
 		cacheRepo:     cacheRepo,
 		webFetcher:    webFetcher,
 		htmlAnalyzer:  htmlAnalyzer,
@@ -58,6 +60,7 @@ func (w *AnalysisWorker) ProcessMessage(ctx context.Context, msg queue.Message, 
 	var payload domain.AnalysisRequestPayload
 	if err := msg.Unmarshal(&payload); err != nil {
 		w.logger.Error().Err(err).Msg("failed to unmarshal message payload")
+
 		return ctrl.Reject(msg)
 	}
 
@@ -66,20 +69,38 @@ func (w *AnalysisWorker) ProcessMessage(ctx context.Context, msg queue.Message, 
 		Str("url", payload.URL).
 		Msg("Processing analysis request")
 
-	if err := w.updateAnalysisStatus(ctx, payload.AnalysisID, domain.StatusInProgress); err != nil {
+	outboxEventID, err := w.getOutboxEventID(ctx, payload.AnalysisID)
+	if err != nil {
+		w.logger.Error().Err(err).Str("analysis_id", payload.AnalysisID.String()).
+			Msg("failed to get outbox event ID")
+
+		return ctrl.Requeue(msg)
+	}
+
+	if err := w.outboxRepo.MarkProcessed(ctx, outboxEventID.String()); err != nil {
+		w.logger.Error().Err(err).Str("analysis_id", payload.AnalysisID.String()).
+			Msg("failed to mark outbox event as processed")
+
+		return ctrl.Requeue(msg)
+	}
+
+	if err := w.analysisRepo.UpdateStatus(ctx, payload.AnalysisID.String(), domain.StatusInProgress); err != nil {
 		w.logger.Error().Err(err).Str("analysis_id", payload.AnalysisID.String()).
 			Msg("failed to update analysis status to in_progress")
+
 		return ctrl.Requeue(msg)
 	}
 
 	content, err := w.webFetcher.Fetch(ctx, payload.URL, payload.Options.Timeout)
 	if err != nil {
-		if updateErr := w.markAnalysisFailed(ctx, payload.AnalysisID, "FETCH_ERROR", err.Error(), 0); updateErr != nil {
+		if updateErr := w.analysisRepo.MarkFailed(ctx, payload.AnalysisID.String(), "FETCH_ERROR", err.Error(), 0); updateErr != nil {
 			w.logger.Error().Err(updateErr).Str("analysis_id", payload.AnalysisID.String()).
 				Msg("failed to mark analysis as failed")
 		}
+
 		w.logger.Error().Err(err).Str("analysis_id", payload.AnalysisID.String()).
 			Str("url", payload.URL).Msg("failed to fetch web page")
+
 		return ctrl.Ack(msg)
 	}
 
@@ -92,6 +113,21 @@ func (w *AnalysisWorker) ProcessMessage(ctx context.Context, msg queue.Message, 
 		return ctrl.Requeue(msg)
 	}
 
+	if err := w.outboxRepo.MarkCompleted(ctx, outboxEventID.String()); err != nil {
+		w.logger.Error().Err(err).Str("analysis_id", payload.AnalysisID.String()).
+			Msg("failed to mark outbox event as completed")
+
+		return ctrl.Requeue(msg)
+	}
+
+	// Invalidate cache so the next fetch gets updated data with duration and completed_at.
+	if w.cacheRepo != nil {
+		if err := w.cacheRepo.Delete(ctx, payload.AnalysisID.String()); err != nil {
+			w.logger.Warn().Err(err).Str("analysis_id", payload.AnalysisID.String()).
+				Msg("failed to invalidate cache after completion")
+		}
+	}
+
 	w.logger.Info().
 		Str("analysis_id", payload.AnalysisID.String()).
 		Str("content_hash", contentHash).
@@ -102,6 +138,7 @@ func (w *AnalysisWorker) ProcessMessage(ctx context.Context, msg queue.Message, 
 
 func (w *AnalysisWorker) CalculateContentHash(html string) string {
 	hash := sha256.Sum256([]byte(html))
+
 	return hex.EncodeToString(hash[:])
 }
 
@@ -112,7 +149,7 @@ func (w *AnalysisWorker) handleContentDeduplication(
 	content *domain.WebPageContent,
 	options domain.AnalysisOptions,
 ) error {
-	existingAnalysis, err := w.findAnalysisByContentHash(ctx, contentHash)
+	existingAnalysis, err := w.analysisRepo.FindByContentHash(ctx, contentHash)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("failed to check for existing content hash: %w", err)
 	}
@@ -124,100 +161,26 @@ func (w *AnalysisWorker) handleContentDeduplication(
 	return w.performFullAnalysis(ctx, analysisID, contentHash, content, options)
 }
 
-func (w *AnalysisWorker) findAnalysisByContentHash(ctx context.Context, contentHash string) (*domain.Analysis, error) {
-	db, err := w.storageClient.GetDB()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get database connection: %w", err)
-	}
-
-	query := `
-		SELECT id, url, status, results, created_at, completed_at, duration
-		FROM analysis
-		WHERE content_hash = $1 AND status = 'completed' AND results IS NOT NULL
-		LIMIT 1`
-
-	row := db.QueryRowContext(ctx, query, contentHash)
-
-	var analysis domain.Analysis
-	var resultsJSON []byte
-	var duration *int64
-
-	err = row.Scan(
-		&analysis.ID,
-		&analysis.URL,
-		&analysis.Status,
-		&resultsJSON,
-		&analysis.CreatedAt,
-		&analysis.CompletedAt,
-		&duration,
-	)
-
-	if err != nil {
-		return nil, err
-	}
-
-	if duration != nil {
-		d := time.Duration(*duration) * time.Millisecond
-		analysis.Duration = &d
-	}
-
-	if resultsJSON != nil {
-		var results domain.AnalysisData
-		if err := json.Unmarshal(resultsJSON, &results); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal results: %w", err)
-		}
-		analysis.Results = &results
-	}
-
-	return &analysis, nil
-}
-
 func (w *AnalysisWorker) copyResultsFromExisting(
 	ctx context.Context,
 	analysisID uuid.UUID,
 	existingAnalysis *domain.Analysis,
 	contentHash string,
 ) error {
-	db, err := w.storageClient.GetDB()
-	if err != nil {
-		return fmt.Errorf("failed to get database connection: %w", err)
-	}
-
-	resultsJSON, err := json.Marshal(existingAnalysis.Results)
-	if err != nil {
-		return fmt.Errorf("failed to marshal results: %w", err)
-	}
-
-	var durationMs *int64
-	if existingAnalysis.Duration != nil {
-		ms := existingAnalysis.Duration.Milliseconds()
-		durationMs = &ms
-	}
-
-	query := `
-		UPDATE analysis
-		SET content_hash = $2,
-			status = 'completed',
-			results = $3,
-			duration = $4,
-			completed_at = NOW()
-		WHERE id = $1`
-
-	_, err = db.ExecContext(ctx, query, analysisID, contentHash, resultsJSON, durationMs)
-	if err != nil {
+	if err := w.analysisRepo.Update(ctx, analysisID.String(), contentHash, existingAnalysis.ContentSize, existingAnalysis.Results); err != nil {
 		return fmt.Errorf("failed to copy results from existing analysis: %w", err)
 	}
 
-	// Update cache with copied analysis
 	if w.cacheRepo != nil {
-		analysis := &domain.Analysis{
-			ID:      analysisID,
-			Status:  domain.StatusCompleted,
-			Results: existingAnalysis.Results,
-		}
-		if err := w.cacheRepo.Set(ctx, analysis); err != nil {
+		analysis, err := w.analysisRepo.Find(ctx, analysisID.String())
+		if err != nil {
 			w.logger.Warn().Err(err).Str("analysis_id", analysisID.String()).
-				Msg("failed to update cache after copying analysis results")
+				Msg("failed to fetch updated analysis for cache")
+		} else {
+			if err := w.cacheRepo.Set(ctx, analysis); err != nil {
+				w.logger.Warn().Err(err).Str("analysis_id", analysisID.String()).
+					Msg("failed to update cache after copying analysis results")
+			}
 		}
 	}
 
@@ -237,12 +200,6 @@ func (w *AnalysisWorker) performFullAnalysis(
 	content *domain.WebPageContent,
 	options domain.AnalysisOptions,
 ) error {
-	startTime := time.Now()
-
-	if err := w.updateContentHash(ctx, analysisID, contentHash, int64(len(content.HTML))); err != nil {
-		return fmt.Errorf("failed to update content hash: %w", err)
-	}
-
 	results := &domain.AnalysisData{}
 
 	// Perform synchronous basic analysis first
@@ -307,29 +264,27 @@ func (w *AnalysisWorker) performFullAnalysis(
 		}
 	}
 
-	duration := time.Since(startTime)
-
-	if err := w.saveAnalysisResults(ctx, analysisID, results, duration); err != nil {
+	if err := w.analysisRepo.Update(ctx, analysisID.String(), contentHash, int64(len(content.HTML)), results); err != nil {
 		return fmt.Errorf("failed to save analysis results: %w", err)
 	}
 
 	// Update cache with completed analysis
 	if w.cacheRepo != nil {
-		analysis := &domain.Analysis{
-			ID:      analysisID,
-			Status:  domain.StatusCompleted,
-			Results: results,
-		}
-		if err := w.cacheRepo.Set(ctx, analysis); err != nil {
+		analysis, err := w.analysisRepo.Find(ctx, analysisID.String())
+		if err != nil {
 			w.logger.Warn().Err(err).Str("analysis_id", analysisID.String()).
-				Msg("failed to update cache after saving analysis results")
+				Msg("failed to fetch updated analysis for cache")
+		} else {
+			if err := w.cacheRepo.Set(ctx, analysis); err != nil {
+				w.logger.Warn().Err(err).Str("analysis_id", analysisID.String()).
+					Msg("failed to update cache after saving analysis results")
+			}
 		}
 	}
 
 	w.logger.Info().
 		Str("analysis_id", analysisID.String()).
 		Str("content_hash", contentHash).
-		Dur("duration", duration).
 		Msg("Completed full analysis")
 
 	return nil
@@ -405,89 +360,13 @@ func (w *AnalysisWorker) analyzeLinksConcurrently(links []domain.Link, analysis 
 	wg.Wait()
 }
 
-func (w *AnalysisWorker) updateAnalysisStatus(ctx context.Context, analysisID uuid.UUID, status domain.AnalysisStatus) error {
-	db, err := w.storageClient.GetDB()
+func (w *AnalysisWorker) getOutboxEventID(ctx context.Context, analysisID uuid.UUID) (uuid.UUID, error) {
+	event, err := w.outboxRepo.GetByAggregateID(ctx, analysisID.String())
 	if err != nil {
-		return fmt.Errorf("failed to get database connection: %w", err)
+		return uuid.Nil, fmt.Errorf("failed to get outbox event: %w", err)
 	}
 
-	var query string
-	var args []interface{}
-
-	if status == domain.StatusInProgress {
-		query = "UPDATE analysis SET status = $1, started_at = NOW() WHERE id = $2"
-		args = []interface{}{status, analysisID}
-	} else {
-		query = "UPDATE analysis SET status = $1 WHERE id = $2"
-		args = []interface{}{status, analysisID}
-	}
-
-	_, err = db.ExecContext(ctx, query, args...)
-	return err
-}
-
-func (w *AnalysisWorker) updateContentHash(ctx context.Context, analysisID uuid.UUID, contentHash string, contentSize int64) error {
-	db, err := w.storageClient.GetDB()
-	if err != nil {
-		return fmt.Errorf("failed to get database connection: %w", err)
-	}
-
-	query := "UPDATE analysis SET content_hash = $1, content_size = $2 WHERE id = $3"
-	_, err = db.ExecContext(ctx, query, contentHash, contentSize, analysisID)
-	return err
-}
-
-func (w *AnalysisWorker) saveAnalysisResults(
-	ctx context.Context,
-	analysisID uuid.UUID,
-	results *domain.AnalysisData,
-	duration time.Duration,
-) error {
-	db, err := w.storageClient.GetDB()
-	if err != nil {
-		return fmt.Errorf("failed to get database connection: %w", err)
-	}
-
-	resultsJSON, err := json.Marshal(results)
-	if err != nil {
-		return fmt.Errorf("failed to marshal results: %w", err)
-	}
-
-	query := `
-		UPDATE analysis
-		SET status = 'completed',
-			results = $2,
-			duration = $3,
-			completed_at = NOW()
-		WHERE id = $1`
-
-	_, err = db.ExecContext(ctx, query, analysisID, resultsJSON, duration.Milliseconds())
-	return err
-}
-
-func (w *AnalysisWorker) markAnalysisFailed(
-	ctx context.Context,
-	analysisID uuid.UUID,
-	errorCode string,
-	errorMessage string,
-	statusCode int,
-) error {
-	db, err := w.storageClient.GetDB()
-	if err != nil {
-		return fmt.Errorf("failed to get database connection: %w", err)
-	}
-
-	query := `
-		UPDATE analysis
-		SET status = 'failed',
-			error_code = $2,
-			error_message = $3,
-			error_status_code = $4,
-			completed_at = NOW()
-		WHERE id = $1`
-
-	_, err = db.ExecContext(ctx, query, analysisID, errorCode, errorMessage, statusCode)
-	return err
+	return event.ID, nil
 }
 
 type SubscriberCtx struct {
@@ -532,6 +411,11 @@ func (c *SubscriberCtx) build() {
 		c.logger.Fatal().Err(err).Msg("Failed to initialize storage")
 	}
 
+	db, err := c.storage.GetDB()
+	if err != nil {
+		c.logger.Fatal().Err(err).Msg("failed to get database connection:")
+	}
+
 	c.cacheClient = infrastructure.NewKeyDBClient(cfg.Cache, c.logger)
 
 	// Test cache connection
@@ -545,7 +429,8 @@ func (c *SubscriberCtx) build() {
 		c.logger.Info().Msg("cache connection established")
 	}
 
-	analysisRepo := adapters.NewPostgresRepository(c.storage)
+	analysisRepo := adapters.NewAnalysisRepository(db)
+	outboxRepo := adapters.NewOutboxRepository(db)
 	var cacheRepo ports.CacheRepository
 	if c.cacheClient != nil {
 		cacheRepo = adapters.NewCacheRepository(c.cacheClient, cfg.Cache, c.logger)
@@ -554,7 +439,7 @@ func (c *SubscriberCtx) build() {
 	htmlAnalyzer := adapters.NewHTMLAnalyzer(c.logger)
 	linkChecker := adapters.NewLinkChecker(cfg.LinkChecker, c.logger)
 
-	c.worker = NewAnalysisWorker(analysisRepo, cacheRepo, webFetcher, htmlAnalyzer, linkChecker, c.storage, c.logger)
+	c.worker = NewAnalysisWorker(analysisRepo, outboxRepo, cacheRepo, webFetcher, htmlAnalyzer, linkChecker, c.storage, c.logger)
 
 	queueConfig := queue.Config{
 		Scheme:   "amqp",
@@ -571,7 +456,7 @@ func (c *SubscriberCtx) build() {
 	)
 
 	if err := c.queue.Connect(); err != nil {
-		c.logger.Fatal().Err(err).Msg("Failed to connect to RabbitMQ")
+		c.logger.Fatal().Err(err).Msg("failed to connect to RabbitMQ")
 	}
 }
 
@@ -611,15 +496,15 @@ func (c *SubscriberCtx) cleanup() {
 	c.logger.Info().Msg("cleaning up resources...")
 
 	if c.queue != nil {
-		c.queue.Close()
+		_ = c.queue.Close()
 	}
 
 	if c.cacheClient != nil {
-		c.cacheClient.Close()
+		_ = c.cacheClient.Close()
 	}
 
 	if c.storage != nil {
-		c.storage.Close()
+		_ = c.storage.Close()
 	}
 
 	c.logger.Info().Msg("Cleanup completed")

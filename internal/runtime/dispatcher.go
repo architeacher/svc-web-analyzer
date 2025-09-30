@@ -15,13 +15,13 @@ import (
 type ServiceCtx struct {
 	deps *Dependencies
 
-	reloadConfigChannel chan os.Signal
-	shutdownChannel     chan os.Signal
+	shutdownChannel chan os.Signal
 
 	serverCtx      context.Context
 	serverStopFunc context.CancelFunc
 
-	serverReady chan struct{}
+	serverReady  chan struct{}
+	configLoader *config.Loader
 }
 
 func New(opt ...Option) *ServiceCtx {
@@ -36,8 +36,7 @@ func New(opt ...Option) *ServiceCtx {
 	}
 
 	return &ServiceCtx{
-		shutdownChannel:     make(chan os.Signal, 1),
-		reloadConfigChannel: make(chan os.Signal, 1),
+		shutdownChannel: make(chan os.Signal, 1),
 	}
 }
 
@@ -53,12 +52,14 @@ func (c *ServiceCtx) Run() {
 func (c *ServiceCtx) build() {
 	c.serverCtx, c.serverStopFunc = context.WithCancel(context.Background())
 
-	deps, err := initializeDependencies(c.serverCtx)
+	deps, err := initializeDependencies(c.serverCtx, WithHTTPServer())
 	if err != nil {
-		panic(fmt.Errorf("ailed to initialize dependencies: %w", err))
+		fmt.Fprintf(os.Stderr, "FATAL: failed to initialize dependencies: %v\n", err)
+		os.Exit(1)
 	}
 
 	c.deps = deps
+	c.configLoader = config.NewLoader(deps.cfg, deps.Infra.SecretStorageClient, deps.secretVersion)
 }
 
 // startService starts the HTTP server
@@ -80,28 +81,22 @@ func (c *ServiceCtx) startService() {
 
 func (c *ServiceCtx) wait() {
 	signal.Notify(c.shutdownChannel, syscall.SIGINT, syscall.SIGTERM)
-	signal.Notify(c.reloadConfigChannel, syscall.SIGHUP)
 }
 
 func (c *ServiceCtx) monitorConfigChanges() {
+	reloadErrors := c.configLoader.WatchConfigSignals(c.serverCtx)
+
 	go func() {
-		for {
-			select {
-			case <-c.serverCtx.Done():
-				c.deps.logger.Info().Msg("stopping config monitor")
-				return
-
-			case <-c.reloadConfigChannel:
-				c.deps.logger.Info().Msg("received config reload signal")
-
-				if err := config.Load(c.serverCtx, c.deps.Infra.SecretStorageClient, c.deps.cfg); err != nil {
-					c.deps.logger.Error().Err(err).Msg("failed to reload config")
-					continue
-				}
-
-				c.deps.logger.Info().Msg("config reloaded successfully")
+		for err := range reloadErrors {
+			if err != nil {
+				c.deps.logger.Error().Err(err).Msg("failed to reload config")
+				continue
 			}
+
+			c.deps.logger.Info().Msg("config reloaded successfully")
 		}
+
+		c.deps.logger.Info().Msg("stopping config monitor")
 	}()
 }
 
@@ -109,7 +104,6 @@ func (c *ServiceCtx) shutdown() {
 	go func() {
 		<-c.shutdownChannel
 		defer close(c.shutdownChannel)
-		defer close(c.reloadConfigChannel)
 
 		c.deps.logger.Info().Msg("received shutdown signal")
 

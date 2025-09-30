@@ -134,6 +134,16 @@ func (m *MockOutboxRepository) MarkPermanentlyFailed(ctx context.Context, eventI
 	return args.Error(0)
 }
 
+func (m *MockOutboxRepository) MarkProcessed(ctx context.Context, eventID string) error {
+	args := m.Called(ctx, eventID)
+	return args.Error(0)
+}
+
+func (m *MockOutboxRepository) MarkCompleted(ctx context.Context, eventID string) error {
+	args := m.Called(ctx, eventID)
+	return args.Error(0)
+}
+
 type MockStorage struct {
 	mock.Mock
 }
@@ -187,7 +197,19 @@ func createTestLogger() *infrastructure.Logger {
 
 func createTestSSEConfig() config.SSEConfig {
 	return config.SSEConfig{
-		EventsInterval: 100 * time.Millisecond, // Faster for tests
+		EventsInterval:    100 * time.Millisecond, // Faster for tests
+		HeartbeatInterval: 100 * time.Millisecond, // Faster for tests
+	}
+}
+
+func createTestOutboxConfig() config.OutboxConfig {
+	return config.OutboxConfig{
+		MaxRetries: config.MaxRetriesByPriority{
+			Low:    3,
+			Normal: 5,
+			High:   7,
+			Urgent: 10,
+		},
 	}
 }
 
@@ -218,7 +240,8 @@ func TestFetchAnalysis_CacheHit(t *testing.T) {
 	mockOutboxRepo := &MockOutboxRepository{}
 	mockHealthChecker := &MockHealthChecker{}
 	sseConfig := createTestSSEConfig()
-	service := NewApplicationService(mockAnalysisRepo, mockCacheRepo, mockOutboxRepo, mockHealthChecker, nil, sseConfig, logger)
+	outboxConfig := createTestOutboxConfig()
+	service := NewApplicationService(mockAnalysisRepo, mockOutboxRepo, mockCacheRepo, mockHealthChecker, nil, sseConfig, outboxConfig, logger)
 
 	// Act
 	result, err := service.FetchAnalysis(ctx, analysisID)
@@ -266,7 +289,8 @@ func TestFetchAnalysis_CacheMiss(t *testing.T) {
 	mockOutboxRepo := &MockOutboxRepository{}
 	mockHealthChecker := &MockHealthChecker{}
 	sseConfig := createTestSSEConfig()
-	service := NewApplicationService(mockAnalysisRepo, mockCacheRepo, mockOutboxRepo, mockHealthChecker, nil, sseConfig, logger)
+	outboxConfig := createTestOutboxConfig()
+	service := NewApplicationService(mockAnalysisRepo, mockOutboxRepo, mockCacheRepo, mockHealthChecker, nil, sseConfig, outboxConfig, logger)
 
 	// Act
 	result, err := service.FetchAnalysis(ctx, analysisID)
@@ -302,7 +326,8 @@ func TestFetchAnalysis_BothFail(t *testing.T) {
 	mockOutboxRepo := &MockOutboxRepository{}
 	mockHealthChecker := &MockHealthChecker{}
 	sseConfig := createTestSSEConfig()
-	service := NewApplicationService(mockAnalysisRepo, mockCacheRepo, mockOutboxRepo, mockHealthChecker, nil, sseConfig, logger)
+	outboxConfig := createTestOutboxConfig()
+	service := NewApplicationService(mockAnalysisRepo, mockOutboxRepo, mockCacheRepo, mockHealthChecker, nil, sseConfig, outboxConfig, logger)
 
 	// Act
 	result, err := service.FetchAnalysis(ctx, analysisID)
@@ -352,7 +377,8 @@ func TestStartAnalysis_DBFails(t *testing.T) {
 	mockHealthChecker := &MockHealthChecker{}
 
 	sseConfig := createTestSSEConfig()
-	service := NewApplicationService(mockAnalysisRepo, mockCacheRepo, mockOutboxRepo, mockHealthChecker, nil, sseConfig, logger)
+	outboxConfig := createTestOutboxConfig()
+	service := NewApplicationService(mockAnalysisRepo, mockOutboxRepo, mockCacheRepo, mockHealthChecker, nil, sseConfig, outboxConfig, logger)
 
 	// Act
 	result, err := service.StartAnalysis(ctx, url, options)
@@ -394,7 +420,8 @@ func TestStartAnalysis_CacheFailsDBSucceeds(t *testing.T) {
 	mockHealthChecker := &MockHealthChecker{}
 
 	sseConfig := createTestSSEConfig()
-	service := NewApplicationService(mockAnalysisRepo, mockCacheRepo, mockOutboxRepo, mockHealthChecker, nil, sseConfig, logger)
+	outboxConfig := createTestOutboxConfig()
+	service := NewApplicationService(mockAnalysisRepo, mockOutboxRepo, mockCacheRepo, mockHealthChecker, nil, sseConfig, outboxConfig, logger)
 
 	// Act
 	result, err := service.StartAnalysis(ctx, url, options)
@@ -436,7 +463,8 @@ func TestFetchAnalysisEvents_CompletedAnalysis(t *testing.T) {
 	mockOutboxRepo := &MockOutboxRepository{}
 	mockHealthChecker := &MockHealthChecker{}
 	sseConfig := createTestSSEConfig()
-	service := NewApplicationService(mockAnalysisRepo, mockCacheRepo, mockOutboxRepo, mockHealthChecker, nil, sseConfig, logger)
+	outboxConfig := createTestOutboxConfig()
+	service := NewApplicationService(mockAnalysisRepo, mockOutboxRepo, mockCacheRepo, mockHealthChecker, nil, sseConfig, outboxConfig, logger)
 
 	// Act
 	eventsChan, err := service.FetchAnalysisEvents(ctx, analysisID)
@@ -450,7 +478,7 @@ func TestFetchAnalysisEvents_CompletedAnalysis(t *testing.T) {
 	case event := <-eventsChan:
 		assert.Equal(t, domain.EventTypeCompleted, event.Type)
 		assert.Equal(t, analysisID, event.EventID)
-		assert.Equal(t, expectedAnalysis, event.Data)
+		assert.Equal(t, expectedAnalysis, event.Payload)
 	case <-time.After(1 * time.Second):
 		t.Fatal("Expected to receive an event but got timeout")
 	}
@@ -494,7 +522,8 @@ func TestFetchAnalysisEvents_FailedAnalysis(t *testing.T) {
 	mockOutboxRepo := &MockOutboxRepository{}
 	mockHealthChecker := &MockHealthChecker{}
 	sseConfig := createTestSSEConfig()
-	service := NewApplicationService(mockAnalysisRepo, mockCacheRepo, mockOutboxRepo, mockHealthChecker, nil, sseConfig, logger)
+	outboxConfig := createTestOutboxConfig()
+	service := NewApplicationService(mockAnalysisRepo, mockOutboxRepo, mockCacheRepo, mockHealthChecker, nil, sseConfig, outboxConfig, logger)
 
 	// Act
 	eventsChan, err := service.FetchAnalysisEvents(ctx, analysisID)
@@ -508,7 +537,7 @@ func TestFetchAnalysisEvents_FailedAnalysis(t *testing.T) {
 	case event := <-eventsChan:
 		assert.Equal(t, domain.EventTypeFailed, event.Type)
 		assert.Equal(t, analysisID, event.EventID)
-		assert.Equal(t, expectedAnalysis, event.Data)
+		assert.Equal(t, expectedAnalysis, event.Payload)
 	case <-time.After(1 * time.Second):
 		t.Fatal("Expected to receive an event but got timeout")
 	}

@@ -13,21 +13,21 @@ import (
 	"github.com/architeacher/svc-web-analyzer/internal/config"
 	"github.com/architeacher/svc-web-analyzer/internal/domain"
 	"github.com/architeacher/svc-web-analyzer/internal/infrastructure"
-	"github.com/architeacher/svc-web-analyzer/pkg/queue"
 	"github.com/architeacher/svc-web-analyzer/internal/ports"
+	"github.com/architeacher/svc-web-analyzer/pkg/queue"
 )
 
 const (
 	OutboxProcessorInterval = 5 * time.Second
 	BatchSize               = 10
-	BaseRetryDelay          = 5 * time.Second
 )
 
 type OutboxProcessor struct {
-	outboxRepo ports.OutboxRepository
-	queue      infrastructure.Queue
-	logger     *infrastructure.Logger
-	config     config.QueueConfig
+	outboxRepo    ports.OutboxRepository
+	queue         infrastructure.Queue
+	logger        *infrastructure.Logger
+	config        config.QueueConfig
+	backoffConfig config.BackoffConfig
 }
 
 func NewOutboxProcessor(
@@ -35,12 +35,14 @@ func NewOutboxProcessor(
 	queue infrastructure.Queue,
 	logger *infrastructure.Logger,
 	config config.QueueConfig,
+	backoffConfig config.BackoffConfig,
 ) *OutboxProcessor {
 	return &OutboxProcessor{
-		outboxRepo: outboxRepo,
-		queue:      queue,
-		logger:     logger,
-		config:     config,
+		outboxRepo:    outboxRepo,
+		queue:         queue,
+		logger:        logger,
+		config:        config,
+		backoffConfig: backoffConfig,
 	}
 }
 
@@ -193,7 +195,8 @@ func (p *OutboxProcessor) handlePublishFailure(ctx context.Context, event *domai
 		return
 	}
 
-	nextRetryAt := adapters.CalculateNextRetryTime(event.RetryCount, BaseRetryDelay)
+	backoffDuration := adapters.CalculateBackoffDuration(event.RetryCount, p.backoffConfig)
+	nextRetryAt := time.Now().Add(backoffDuration)
 
 	if err := p.outboxRepo.MarkFailed(ctx, event.ID.String(), errorDetails, &nextRetryAt); err != nil {
 		p.logger.Error().
@@ -245,10 +248,15 @@ func (c *PublisherCtx) build() {
 
 	c.storage, err = infrastructure.NewStorage(cfg.Storage)
 	if err != nil {
-		c.logger.Fatal().Err(err).Msg("Failed to initialize storage")
+		c.logger.Fatal().Err(err).Msg("failed to initialize storage")
 	}
 
-	outboxRepo := adapters.NewOutboxRepository(c.storage)
+	db, err := c.storage.GetDB()
+	if err != nil {
+		c.logger.Fatal().Err(err).Msg("failed to get database connection:")
+	}
+
+	outboxRepo := adapters.NewOutboxRepository(db)
 
 	queueConfig := queue.Config{
 		Scheme:   "amqp",
@@ -269,7 +277,7 @@ func (c *PublisherCtx) build() {
 		c.logger.Fatal().Err(err).Msg("Failed to connect to RabbitMQ")
 	}
 
-	c.processor = NewOutboxProcessor(outboxRepo, c.queue, c.logger, cfg.Queue)
+	c.processor = NewOutboxProcessor(outboxRepo, c.queue, c.logger, cfg.Queue, cfg.Backoff)
 }
 
 func (c *PublisherCtx) start() {
@@ -288,11 +296,11 @@ func (c *PublisherCtx) wait() {
 }
 
 func (c *PublisherCtx) shutdown() {
-	c.logger.Info().Msg("Received shutdown signal")
+	c.logger.Info().Msg("received shutdown signal")
 	defer c.cleanup()
 
 	c.cancelFunc()
-	c.logger.Info().Msg("Outbox publisher service stopped")
+	c.logger.Info().Msg("outbox publisher service stopped")
 }
 
 func (c *PublisherCtx) cleanup() {

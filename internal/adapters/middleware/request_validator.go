@@ -44,6 +44,13 @@ func OapiRequestValidatorWithOptions(
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Skip validation for OPTIONS requests (CORS preflight)
+			if r.Method == http.MethodOptions {
+				next.ServeHTTP(w, r)
+
+				return
+			}
+
 			if statusCode, err := validateRequest(logger, r, router, options); err != nil {
 				if options != nil && options.ErrorHandler != nil {
 					options.ErrorHandler(logger, w, err.Error(), statusCode)

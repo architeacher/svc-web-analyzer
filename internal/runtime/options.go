@@ -1,7 +1,6 @@
 package runtime
 
 import (
-	"context"
 	"os"
 
 	"github.com/architeacher/svc-web-analyzer/internal/config"
@@ -9,8 +8,6 @@ import (
 )
 
 type Option func(client *ServiceCtx)
-
-type TracerShutdownFunc func(ctx context.Context) error
 
 func WithLogger(logger *infrastructure.Logger) Option {
 	return func(sCtx *ServiceCtx) {

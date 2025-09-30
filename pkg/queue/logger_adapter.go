@@ -2,17 +2,22 @@ package queue
 
 // LoggerAdapter adapts any logger to the queue logger interface
 type LoggerAdapter struct {
-	logger interface{}
+	logger any
 }
 
 // NewLoggerAdapter creates a new logger adapter
-func NewLoggerAdapter(logger interface{}) *LoggerAdapter {
+func NewLoggerAdapter(logger any) *LoggerAdapter {
 	return &LoggerAdapter{logger: logger}
 }
 
 // Info returns an info log event
 func (l *LoggerAdapter) Info() LogEvent {
-	if infoLogger, ok := l.logger.(interface{ Info() interface{ Msg(string); Str(string, string) interface{ Msg(string) } } }); ok {
+	if infoLogger, ok := l.logger.(interface {
+		Info() interface {
+			Msg(string)
+			Str(string, string) interface{ Msg(string) }
+		}
+	}); ok {
 		infoEvent := infoLogger.Info()
 		return &LogEventAdapter{
 			event:     infoEvent,
@@ -24,7 +29,13 @@ func (l *LoggerAdapter) Info() LogEvent {
 
 // Error returns an error log event
 func (l *LoggerAdapter) Error() LogEvent {
-	if errorLogger, ok := l.logger.(interface{ Error() interface{ Msg(string); Err(error) interface{}; Str(string, string) interface{} } }); ok {
+	if errorLogger, ok := l.logger.(interface {
+		Error() interface {
+			Msg(string)
+			Err(error) any
+			Str(string, string) any
+		}
+	}); ok {
 		errorEvent := errorLogger.Error()
 		return &LogEventAdapter{
 			event:      errorEvent,
@@ -36,7 +47,9 @@ func (l *LoggerAdapter) Error() LogEvent {
 
 // Debug returns a debug log event
 func (l *LoggerAdapter) Debug() LogEvent {
-	if debugLogger, ok := l.logger.(interface{ Debug() interface{ Msg(string) } }); ok {
+	if debugLogger, ok := l.logger.(interface {
+		Debug() interface{ Msg(string) }
+	}); ok {
 		debugEvent := debugLogger.Debug()
 		return &LogEventAdapter{
 			event:      debugEvent,
@@ -48,10 +61,10 @@ func (l *LoggerAdapter) Debug() LogEvent {
 
 // LogEventAdapter adapts log events to the queue log event interface
 type LogEventAdapter struct {
-	event      interface{}
-	infoEvent  interface{}
-	errorEvent interface{}
-	debugEvent interface{}
+	event      any
+	infoEvent  any
+	errorEvent any
+	debugEvent any
 }
 
 // Msg logs a message
@@ -96,13 +109,18 @@ func (l *LogEventAdapter) Err(err error) LogEvent {
 }
 
 // Helper function to extract Err method from any interface
-func getErrMethod(event interface{}) func(error) interface{} {
-	if errEvent, ok := event.(interface{ Err(error) interface{} }); ok {
+func getErrMethod(event any) func(error) any {
+	if errEvent, ok := event.(interface{ Err(error) any }); ok {
 		return errEvent.Err
 	}
 	// Try alternative interface signatures
-	if errEvent, ok := event.(interface{ Err(error) interface{ Msg(string); Str(string, string) interface{ Msg(string) } } }); ok {
-		return func(e error) interface{} {
+	if errEvent, ok := event.(interface {
+		Err(error) interface {
+			Msg(string)
+			Str(string, string) interface{ Msg(string) }
+		}
+	}); ok {
+		return func(e error) any {
 			return errEvent.Err(e)
 		}
 	}
@@ -141,18 +159,25 @@ func (l *LogEventAdapter) Str(key, value string) LogEvent {
 }
 
 // Helper function to extract Str method from any interface
-func getStrMethod(event interface{}) func(string, string) interface{} {
-	if strEvent, ok := event.(interface{ Str(string, string) interface{} }); ok {
+func getStrMethod(event any) func(string, string) any {
+	if strEvent, ok := event.(interface{ Str(string, string) any }); ok {
 		return strEvent.Str
 	}
 	// Try alternative interface signatures
-	if strEvent, ok := event.(interface{ Str(string, string) interface{ Msg(string) } }); ok {
-		return func(key, value string) interface{} {
+	if strEvent, ok := event.(interface {
+		Str(string, string) interface{ Msg(string) }
+	}); ok {
+		return func(key, value string) any {
 			return strEvent.Str(key, value)
 		}
 	}
-	if strEvent, ok := event.(interface{ Str(string, string) interface{ Msg(string); Str(string, string) interface{ Msg(string) } } }); ok {
-		return func(key, value string) interface{} {
+	if strEvent, ok := event.(interface {
+		Str(string, string) interface {
+			Msg(string)
+			Str(string, string) interface{ Msg(string) }
+		}
+	}); ok {
+		return func(key, value string) any {
 			return strEvent.Str(key, value)
 		}
 	}
